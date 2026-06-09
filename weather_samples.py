@@ -132,10 +132,6 @@ def night_window(
         nu = to_night_ut(ut, anchor)
         starts.append(nu)
         ends.append(nu)
-    for s in weather:
-        nu = to_night_ut(s.ut, anchor)
-        starts.append(nu)
-        ends.append(nu)
     if not starts or not ends:
         return None
     return min(starts), max(ends), anchor

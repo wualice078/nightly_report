@@ -40,7 +40,7 @@ def build_weather_section(
     lines.append(f"  {'UT(h)':>7}  {'Temp':>4}  {'RH%':>4}  {'Wind':>4}  {'Dir':>4}")
 
     for t in grid_ut(start, end):
-        s: WeatherSample | None = nearest_on_night(t, weather, anchor, GRID_STEP / 2)
+        s: WeatherSample | None = nearest_on_night(t, weather, anchor, GRID_STEP)
         label = display_ut(t)
         if s:
             lines.append(

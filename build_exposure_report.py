@@ -7,14 +7,23 @@ import re
 from pathlib import Path
 
 from weather_samples import (
+    load_dome_events,
     load_scheduler_weather,
     nearest_on_night,
     night_anchor_ut,
     to_night_ut,
 )
 
-FITS_RE = re.compile(r"(\d{8})(\d{6})([a-zA-Z])")
+FITS_RE = re.compile(r"(?<!\d)(\d{8})(\d{6})([a-zA-Z])?(?!\d)")
 EXPOSURE_TOL = 10.0 / 60.0
+
+
+def _fits_token(line: str) -> str | None:
+    m = FITS_RE.search(line)
+    if not m:
+        return None
+    suffix = m.group(3) or ""
+    return f"{m.group(1)}{m.group(2)}{suffix}"
 
 
 def _fits_ut_hours(token: str) -> float | None:
@@ -34,7 +43,7 @@ def _parse_line(line: str) -> dict | None:
     parts = line.split()
     if len(parts) < 8:
         return None
-    fits = next((p for p in parts if FITS_RE.search(p)), None)
+    fits = _fits_token(line)
     if not fits:
         return None
     ut = _fits_ut_hours(fits)
@@ -48,7 +57,7 @@ def _parse_line(line: str) -> dict | None:
         "dec": float(parts[1]),
         "shutter": shutter,
         "observing": _is_observing(shutter),
-        "fits": fits.rstrip("sSdDnNeE"),
+        "fits": re.sub(r"[a-zA-Z]$", "", fits),
         "tag": tag,
     }
 
@@ -94,7 +103,8 @@ def build_exposure_section(log_obs: Path, scheduler_log: Path | None) -> str:
         lines += ["  (no exposures)", ""]
         return "\n".join(lines) + "\n"
 
-    anchor = night_anchor_ut([], [r["ut"] for r in rows])
+    dome = load_dome_events(scheduler_log)
+    anchor = night_anchor_ut(dome, [r["ut"] for r in rows])
     rows.sort(key=lambda r: to_night_ut(r["ut"], anchor))
 
     obs = [r for r in rows if r["observing"]]
