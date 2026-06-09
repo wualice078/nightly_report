@@ -1,0 +1,6 @@
+reports/*.txt
+reports/cron_morning.log
+__pycache__/
+*.pyc
+*.pyo
+.Python
