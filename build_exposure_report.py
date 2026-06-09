@@ -6,9 +6,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from weather_samples import load_scheduler_weather, nearest
+from weather_samples import (
+    load_scheduler_weather,
+    nearest_on_night,
+    night_anchor_ut,
+    to_night_ut,
+)
 
-FITS_RE = re.compile(r"(\d{8})(\d{6})s")
+FITS_RE = re.compile(r"(\d{8})(\d{6})([a-zA-Z])")
 EXPOSURE_TOL = 10.0 / 60.0
 
 
@@ -21,7 +26,8 @@ def _fits_ut_hours(token: str) -> float | None:
 
 
 def _is_observing(shutter: str) -> bool:
-    return shutter.lower() in ("s", "y")
+    """Y/S = science; N/E/D/etc. = calibration (per obsplan and log.obs conventions)."""
+    return shutter.upper() in ("Y", "S")
 
 
 def _parse_line(line: str) -> dict | None:
@@ -42,7 +48,7 @@ def _parse_line(line: str) -> dict | None:
         "dec": float(parts[1]),
         "shutter": shutter,
         "observing": _is_observing(shutter),
-        "fits": fits.rstrip("s"),
+        "fits": fits.rstrip("sSdDnNeE"),
         "tag": tag,
     }
 
@@ -56,11 +62,11 @@ def exposure_ut_list(log_obs: Path) -> list[float]:
     return uts
 
 
-def _exposure_table(title: str, rows: list[dict], weather) -> list[str]:
+def _exposure_table(title: str, rows: list[dict], weather, anchor: float) -> list[str]:
     lines = [title, f"  {'UT(h)':>6}  {'tag':<20}  {'RA':>7}  {'Dec':>7}  "
              f"{'Temp':>4}  {'RH%':>3}  {'Wind':>4}  {'Dir':>4}  {'DIMM':>4}  file"]
     for r in rows:
-        w = nearest(r["ut"], weather, EXPOSURE_TOL)
+        w = nearest_on_night(to_night_ut(r["ut"], anchor), weather, anchor, EXPOSURE_TOL)
         dimm = w.seeing if w and w.seeing else "n/a"
         if w:
             wx = f"{w.temp:>4}  {w.humid:>3}  {w.wind:>4}  {w.wind_dir:>4}"
@@ -88,18 +94,21 @@ def build_exposure_section(log_obs: Path, scheduler_log: Path | None) -> str:
         lines += ["  (no exposures)", ""]
         return "\n".join(lines) + "\n"
 
+    anchor = night_anchor_ut([], [r["ut"] for r in rows])
+    rows.sort(key=lambda r: to_night_ut(r["ut"], anchor))
+
     obs = [r for r in rows if r["observing"]]
     cal = [r for r in rows if not r["observing"]]
 
     lines.append("")
     if obs:
-        lines += _exposure_table(f"  Observing ({len(obs)})", obs, weather)
+        lines += _exposure_table(f"  Observing ({len(obs)})", obs, weather, anchor)
     else:
         lines.append("  Observing (0)")
 
     lines.append("")
     if cal:
-        lines += _exposure_table(f"  Calibration ({len(cal)})", cal, weather)
+        lines += _exposure_table(f"  Calibration ({len(cal)})", cal, weather, anchor)
     else:
         lines.append("  Calibration (0)")
 

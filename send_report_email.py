@@ -30,7 +30,7 @@ from night_paths import NightPaths, get_default_ut_date, resolve_night_paths
 
 def build_missing_report(date: str, error: str) -> str:
     return (
-        f"LS4 NIGHTLY REPORT — {date}\n"
+        f"LS4 NIGHTLY REPORT - {date}\n"
         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
         f"Status: DATA MISSING\n\n"
         f"=== Data unavailable ===\n  {error}\n\n"
@@ -40,7 +40,7 @@ def build_missing_report(date: str, error: str) -> str:
 def build_full_report(paths: NightPaths) -> str:
     exp_ut = exposure_ut_list(paths.log_obs)
     header = (
-        f"LS4 NIGHTLY REPORT — {paths.date}\n"
+        f"LS4 NIGHTLY REPORT - {paths.date}\n"
         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
         f"Data source: {paths.source}\n\n"
     )
@@ -75,7 +75,7 @@ def main() -> int:
     try:
         paths = resolve_night_paths(date, allow_practice_fallback=practice)
         text = build_full_report(paths)
-        print(f"Night {date} — source: {paths.source}")
+        print(f"Night {date} - source: {paths.source}")
     except FileNotFoundError as e:
         if practice:
             print(f"error: {e}", file=sys.stderr)

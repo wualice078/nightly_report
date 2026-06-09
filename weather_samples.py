@@ -83,26 +83,62 @@ def load_dome_events(path: Path | None) -> list[tuple[float, str]]:
     return events
 
 
+def night_anchor_ut(
+    dome: list[tuple[float, str]],
+    exposure_ut: list[float],
+) -> float:
+    """Evening-side UT that starts the night (for post-midnight +24 mapping)."""
+    for ut, st in dome:
+        if st == "open":
+            return ut
+    if not exposure_ut:
+        return 12.0
+    uts = exposure_ut
+    if max(uts) - min(uts) > 12.0:
+        evening = [u for u in uts if u >= 12.0]
+        if evening:
+            return min(evening)
+    return min(uts)
+
+
+def to_night_ut(ut: float, anchor: float) -> float:
+    """Continuous night timeline: post-midnight UT gets +24 h."""
+    if ut < anchor - 2.0:
+        return ut + 24.0
+    return ut
+
+
+def display_ut(night_ut: float) -> float:
+    """Map night timeline back to 0-24 h for report display."""
+    return round(night_ut - 24.0, 6) if night_ut >= 24.0 else round(night_ut, 6)
+
+
 def night_window(
     dome: list[tuple[float, str]],
     weather: list[WeatherSample],
     exposure_ut: list[float],
-) -> tuple[float, float] | None:
-    starts, ends = [], []
+) -> tuple[float, float, float] | None:
+    """Return (night_start, night_end, anchor) on the continuous night timeline."""
+    anchor = night_anchor_ut(dome, exposure_ut)
+    starts: list[float] = []
+    ends: list[float] = []
     for ut, st in dome:
+        nu = to_night_ut(ut, anchor)
         if st == "open":
-            starts.append(ut)
+            starts.append(nu)
         elif st in ("closed", "close"):
-            ends.append(ut)
-    if exposure_ut:
-        starts.append(min(exposure_ut))
-        ends.append(max(exposure_ut))
-    if weather:
-        starts.append(weather[0].ut)
-        ends.append(weather[-1].ut)
+            ends.append(nu)
+    for ut in exposure_ut:
+        nu = to_night_ut(ut, anchor)
+        starts.append(nu)
+        ends.append(nu)
+    for s in weather:
+        nu = to_night_ut(s.ut, anchor)
+        starts.append(nu)
+        ends.append(nu)
     if not starts or not ends:
         return None
-    return min(starts), max(ends)
+    return min(starts), max(ends), anchor
 
 
 def grid_ut(start: float, end: float) -> list[float]:
@@ -116,10 +152,20 @@ def grid_ut(start: float, end: float) -> list[float]:
     return times
 
 
-def nearest(ut: float, samples: list[WeatherSample], max_delta: float) -> WeatherSample | None:
+def nearest_on_night(
+    night_ut: float,
+    samples: list[WeatherSample],
+    anchor: float,
+    max_delta: float,
+) -> WeatherSample | None:
     best, best_d = None, max_delta + 1.0
     for s in samples:
-        d = abs(s.ut - ut)
+        d = abs(to_night_ut(s.ut, anchor) - night_ut)
         if d <= max_delta and d < best_d:
             best, best_d = s, d
     return best
+
+
+def nearest(ut: float, samples: list[WeatherSample], max_delta: float) -> WeatherSample | None:
+    anchor = night_anchor_ut([], [ut])
+    return nearest_on_night(to_night_ut(ut, anchor), samples, anchor, max_delta)
