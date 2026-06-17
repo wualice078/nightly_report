@@ -172,6 +172,29 @@ def _live_paths(date: str) -> NightPaths | None:
     return None
 
 
+def diagnose_live_night(date: str) -> str:
+    """Human-readable checklist of what exists for a UT night (for error messages)."""
+    lines = [f"night {date}:"]
+    for data_root in LIVE_DATA_ROOTS:
+        night_dir = data_root / date
+        log_obs = night_dir / "logs" / "log.obs"
+        sched = night_dir / "logs" / f"{date}.log"
+        lines.append(f"  data tree {data_root}:")
+        lines.append(f"    {night_dir}/  {'exists' if _is_dir(night_dir) else 'MISSING'}")
+        lines.append(f"    {log_obs}  {'OK' if _is_file(log_obs) else 'MISSING (required)'}")
+        lines.append(f"    {sched}  {'OK' if _is_file(sched) else 'missing (dome/weather need this)'}")
+    lines.append("  obsplan (need one):")
+    seen: set[str] = set()
+    for data_root in LIVE_DATA_ROOTS:
+        for obsplan in _obsplan_candidates(date, data_root):
+            key = str(obsplan)
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.append(f"    {obsplan}  {'OK' if _is_file(obsplan) else 'MISSING'}")
+    return "\n".join(lines)
+
+
 def resolve_night_paths(date: str, *, allow_practice_fallback: bool = True) -> NightPaths:
     paths = _live_paths(date)
     if paths is not None:
@@ -180,7 +203,8 @@ def resolve_night_paths(date: str, *, allow_practice_fallback: bool = True) -> N
     if not allow_practice_fallback:
         raise FileNotFoundError(
             f"no live logs for {date} under {LIVE_DATA_ROOTS} "
-            f"with obsplan under {OBSPLAN_ROOTS}"
+            f"with obsplan under {OBSPLAN_ROOTS}\n"
+            f"{diagnose_live_night(date)}"
         )
 
     paths = _practice_paths(date)
