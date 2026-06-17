@@ -50,7 +50,8 @@ def parse_log_obs(path: Path) -> list[str]:
 
 
 def is_observing_field(field: PlannedField) -> bool:
-    return field.shutter.upper() == "Y"
+    """Y/S = science; N/E/D/etc. = calibration."""
+    return field.shutter.upper() in ("Y", "S")
 
 
 def matches(field: PlannedField, line: str) -> bool:
@@ -83,6 +84,17 @@ def _bucket(fields: list[PlannedField], log_lines: list[str]):
         else:
             none.append(f)
     return complete, partial, none
+
+
+def field_counts(fields: list[PlannedField], log_lines: list[str]) -> dict[str, int]:
+    """Return planned / complete / partial / not_observed counts."""
+    complete, partial, none = _bucket(fields, log_lines)
+    return {
+        "planned": len(fields),
+        "complete": len(complete),
+        "partial": len(partial),
+        "not_observed": len(none),
+    }
 
 
 def _field_table(complete, partial, none) -> list[str]:

@@ -71,6 +71,11 @@ def validate(date: str, paths, report: str) -> list[str]:
     if f"Data source: practice" not in report:
         errors.append("not marked as practice source")
 
+    if "=== Night summary ===" not in report:
+        errors.append("missing night summary section")
+    if f"Observing fields: {len(obs_fields)} planned" not in report:
+        errors.append("observing field summary missing")
+
     return errors
 
 

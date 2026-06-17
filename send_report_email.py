@@ -2,11 +2,12 @@
 """
 Build and email the LS4 nightly report.
 
-Mountain production:
-  python3 /home/observer/nightly_report/send_report_email.py --no-practice-fallback --to EMAIL
+NUC (mountain):
+  /home/ls4/ls4_venv/bin/python3 \\
+    /home/ls4/nightly_report/send_report_email.py --no-practice-fallback --build-only
 
 Practice / test:
-  python3 /home/observer/nightly_report/send_report_email.py --date YYYYMMDD --build-only
+  python3 send_report_email.py --date YYYYMMDD --build-only
 """
 
 from __future__ import annotations
@@ -23,9 +24,11 @@ sys.path.insert(0, str(PACKAGE))
 
 from build_dome_report import build_dome_section
 from build_exposure_report import build_exposure_section, exposure_ut_list
+from build_summary import build_summary_section
 from build_weather_report import build_weather_section
 from compare_obsplan_log import build_fields_section
 from night_paths import NightPaths, get_default_ut_date, resolve_night_paths
+from practice_config import MORNING_REPORT_LIVE_ONLY
 
 
 def build_missing_report(date: str, error: str) -> str:
@@ -47,10 +50,23 @@ def build_full_report(paths: NightPaths) -> str:
     return "".join(
         [
             header,
+            build_summary_section(
+                paths.obsplan,
+                paths.log_obs,
+                paths.scheduler_log,
+                night_date=paths.date,
+                dome_daemon_log=paths.dome_daemon_log,
+                exposure_ut=exp_ut,
+            ),
             build_fields_section(paths.obsplan, paths.log_obs),
             "\n",
             build_exposure_section(paths.log_obs, paths.scheduler_log),
-            build_dome_section(paths.scheduler_log),
+            build_dome_section(
+                paths.scheduler_log,
+                night_date=paths.date,
+                dome_daemon_log=paths.dome_daemon_log,
+                exposure_ut=exp_ut,
+            ),
             build_weather_section(paths.scheduler_log, exposure_ut=exp_ut),
         ]
     )
@@ -61,7 +77,8 @@ def main() -> int:
     ap.add_argument("--date")
     ap.add_argument("--to")
     ap.add_argument("--build-only", action="store_true")
-    ap.add_argument("--no-practice-fallback", action="store_true")
+    ap.add_argument("--practice-fallback", action="store_true", help="Use practice archive if live logs missing")
+    ap.add_argument("--no-practice-fallback", action="store_true", help="Live data only (same as mountain default)")
     ap.add_argument("--subject")
     ap.add_argument("--report", type=Path)
     args = ap.parse_args()
@@ -69,15 +86,20 @@ def main() -> int:
     date = args.date or get_default_ut_date()
     REPORTS.mkdir(exist_ok=True)
     report = args.report or (REPORTS / f"report_{date}.txt")
-    practice = not args.no_practice_fallback
+    if args.no_practice_fallback:
+        allow_practice = False
+    elif args.practice_fallback:
+        allow_practice = True
+    else:
+        allow_practice = not MORNING_REPORT_LIVE_ONLY
 
     paths = None
     try:
-        paths = resolve_night_paths(date, allow_practice_fallback=practice)
+        paths = resolve_night_paths(date, allow_practice_fallback=allow_practice)
         text = build_full_report(paths)
         print(f"Night {date} - source: {paths.source}")
     except FileNotFoundError as e:
-        if practice:
+        if allow_practice:
             print(f"error: {e}", file=sys.stderr)
             return 1
         text = build_missing_report(date, str(e))

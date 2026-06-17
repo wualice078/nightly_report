@@ -20,8 +20,8 @@ def main() -> int:
         "--to",
         MORNING_REPORT_EMAIL,
     ]
-    if MORNING_REPORT_LIVE_ONLY:
-        cmd.append("--no-practice-fallback")
+    if not MORNING_REPORT_LIVE_ONLY:
+        cmd.append("--practice-fallback")
     return subprocess.call(cmd)
 
 
