@@ -16,6 +16,8 @@ if [ -z "$PY" ]; then
   PY="$(command -v python3)"
 fi
 export LS4_OBSERVER_ROOT="${LS4_OBSERVER_ROOT:-/home/observer}"
+export LS4_DATA_ROOT="${LS4_DATA_ROOT:-/home/ls4/data}"
+export LS4_OBSPLAN_ROOT="${LS4_OBSPLAN_ROOT:-/home/ls4/obsplans}"
 export LS4_LIVE_ONLY="${LS4_LIVE_ONLY:-1}"
 mkdir -p "$DIR/reports"
 {

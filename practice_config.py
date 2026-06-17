@@ -9,7 +9,7 @@ from pathlib import Path
 # Email recipient for morning cron
 MORNING_REPORT_EMAIL = "wualice078@berkeley.edu"
 
-# Production (mountain): live observer data only.  Practice (Northwestern): LS4_LIVE_ONLY=0
+
 def _live_only() -> bool:
     v = os.environ.get("LS4_LIVE_ONLY")
     if v is not None:
@@ -19,7 +19,7 @@ def _live_only() -> bool:
 
 MORNING_REPORT_LIVE_ONLY = _live_only()
 
-# Observer data (read-only on NUC via NFS). Override: export LS4_OBSERVER_ROOT=...
+HOME = Path.home()
 OBSERVER_ROOT = Path(os.environ.get("LS4_OBSERVER_ROOT", "/home/observer"))
 
 PRACTICE_ROOT = Path(
@@ -27,12 +27,41 @@ PRACTICE_ROOT = Path(
 )
 PRACTICE_NIGHTS: list[str] | None = None
 
-LIVE_DATA_ROOTS = [OBSERVER_ROOT / "data", Path("/data/observer")]
-OBSPLAN_ROOT = OBSERVER_ROOT / "obsplans"
-DOME_DAEMON_LOG = OBSERVER_ROOT / "logs/dome_daemon.log"
+
+def _unique_paths(paths: list[Path]) -> list[Path]:
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in paths:
+        key = str(p)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
+
+
+# NUC: ls4 often reads ~/data, not /home/observer (permission denied). Override with LS4_DATA_ROOT.
+LIVE_DATA_ROOTS = _unique_paths(
+    [Path(p) for p in os.environ.get("LS4_DATA_ROOT", "").split(":") if p]
+    + [
+        HOME / "data",
+        OBSERVER_ROOT / "data",
+        Path("/data/observer"),
+    ]
+)
+
+OBSPLAN_ROOTS = _unique_paths(
+    [Path(p) for p in os.environ.get("LS4_OBSPLAN_ROOT", "").split(":") if p]
+    + [
+        HOME / "obsplans",
+        OBSERVER_ROOT / "obsplans",
+    ]
+)
+OBSPLAN_ROOT = OBSPLAN_ROOTS[0]
+
+DOME_DAEMON_LOG = Path(
+    os.environ.get("LS4_DOME_DAEMON_LOG", str(OBSERVER_ROOT / "logs/dome_daemon.log"))
+)
 PRACTICE_DOME_DAEMON_LOG = OBSERVER_ROOT / "recent_logs/logfiles/dome_daemon.log"
 GET_UT_DATE = Path(os.environ.get("LS4_GET_UT_DATE", str(OBSERVER_ROOT / "bin/get_ut_date")))
 
-# NUC install:  ~/nightly_report/
-# Cron:         0 7 * * * /home/ls4/nightly_report/send_morning_report.sh
-# Reports:      ~/nightly_report/reports/report_YYYYMMDD.txt
+# NUC: ~/nightly_report/   Cron: 0 7 * * * ~/nightly_report/send_morning_report.sh
