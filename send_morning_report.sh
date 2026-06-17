@@ -3,11 +3,16 @@
 # Install on NUC: 0 7 * * * /home/ls4/nightly_report/send_morning_report.sh
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG="$DIR/reports/cron_morning.log"
-PY="${LS4_PYTHON:-/home/ls4/code/observer_venv/bin/python3}"
-if [ ! -x "$PY" ]; then
-  PY=/home/ls4/observer_venv/bin/python3
-fi
-if [ ! -x "$PY" ]; then
+PY="${LS4_PYTHON:-}"
+for candidate in \
+  /home/ls4/ls4_venv/bin/python3 \
+  /home/ls4/code/observer_venv/bin/python3 \
+  /home/ls4/observer_venv/bin/python3; do
+  if [ -z "$PY" ] && [ -x "$candidate" ]; then
+    PY=$candidate
+  fi
+done
+if [ -z "$PY" ]; then
   PY="$(command -v python3)"
 fi
 export LS4_OBSERVER_ROOT="${LS4_OBSERVER_ROOT:-/home/observer}"

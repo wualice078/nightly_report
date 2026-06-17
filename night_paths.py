@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from practice_config import (
@@ -29,12 +29,27 @@ class NightPaths:
     source: str
 
 
+def _fallback_ut_date() -> str:
+    """Match observer bin/get_ut_date when that script is unavailable."""
+    now_local = datetime.now()
+    if now_local.hour < 8:
+        return now_local.strftime("%Y%m%d")
+    d_local = now_local.strftime("%Y%m%d")
+    d_ut = datetime.utcnow().strftime("%Y%m%d")
+    if d_ut == d_local:
+        return (now_local.date() + timedelta(days=1)).strftime("%Y%m%d")
+    return d_ut
+
+
 def get_default_ut_date() -> str:
-    if GET_UT_DATE.is_file():
-        r = subprocess.run([str(GET_UT_DATE)], capture_output=True, text=True)
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip().split()[-1]
-    return datetime.utcnow().strftime("%Y%m%d")
+    try:
+        if GET_UT_DATE.is_file():
+            r = subprocess.run([str(GET_UT_DATE)], capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip().split()[-1]
+    except OSError:
+        pass
+    return _fallback_ut_date()
 
 
 def discover_practice_nights() -> list[str]:
