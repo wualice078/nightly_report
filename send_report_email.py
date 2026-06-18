@@ -13,6 +13,7 @@ Practice / test:
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -108,6 +109,13 @@ def main() -> int:
     print(f"Wrote {report}")
 
     if args.build_only or not args.to:
+        return 0
+
+    if shutil.which("mail") is None:
+        print(
+            f"warning: 'mail' not installed — report saved at {report}",
+            file=sys.stderr,
+        )
         return 0
 
     practice_tag = " [PRACTICE]" if paths and paths.source == "practice" else ""
