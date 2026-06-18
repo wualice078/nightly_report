@@ -75,7 +75,18 @@ def build_summary_section(
                 src = " (from dome_daemon.log)"
             lines.append(f"  Dome last close:  {_format_ut(dome.last_close)}{src}")
         elif dome.still_open:
-            lines.append("  Dome last close:  n/a (still open at end of log)")
+            if dome.daemon_checked and dome.daemon_closes_on_night == 0:
+                lines.append(
+                    "  Dome last close:  n/a (scheduler log ended open; "
+                    "no dome_daemon close for this night)"
+                )
+            elif dome.daemon_checked:
+                lines.append(
+                    "  Dome last close:  n/a (scheduler log ended open; "
+                    f"dome_daemon had {dome.daemon_closes_on_night} close(s), none matched)"
+                )
+            else:
+                lines.append("  Dome last close:  n/a (still open at end of log)")
         if dome.total_open_h > 0:
             lines.append(
                 f"  Dome total open:  {dome.total_open_h:.3f} h ({dome.total_open_h * 60:.1f} min)"

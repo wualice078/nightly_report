@@ -9,8 +9,10 @@ from pathlib import Path
 
 from weather_samples import night_anchor_ut, to_night_ut
 
+# Mountain `date` is usually 24h (no AM/PM); practice copies may use 12h.
 DAEMON_TS = re.compile(
-    r"^(\w{3})\s+(\w{3})\s+(\d+)\s+(\d+):(\d+):(\d+)\s+(AM|PM)\s+([+-])(\d{2})\s+(\d{4})"
+    r"^(\w{3})\s+(\w{3})\s+(\d+)\s+(\d+):(\d+):(\d+)\s+"
+    r"(?:(AM|PM)\s+)?([+-])(\d{2})\s+(\d{4})"
 )
 DAEMON_CLOSED = re.compile(r"schmidt dome now closed", re.IGNORECASE)
 
@@ -39,9 +41,11 @@ def _parse_daemon_timestamp(line: str) -> datetime | None:
     if month is None:
         return None
     day = int(day_s)
-    hour = int(h_s) % 12
-    if ampm.upper() == "PM":
-        hour += 12
+    hour = int(h_s)
+    if ampm:
+        hour = hour % 12
+        if ampm.upper() == "PM":
+            hour += 12
     minute = int(mi_s)
     second = int(s_s)
     year = int(year_s)
@@ -82,6 +86,10 @@ def load_dome_daemon_closes(path: Path | None) -> list[datetime]:
             continue
         out.append(local_dt.astimezone(timezone.utc))
     return out
+
+
+def count_daemon_closes_on_night(daemon_log: Path | None, night_date: str) -> int:
+    return sum(1 for c in load_dome_daemon_closes(daemon_log) if belongs_to_ut_night(c, night_date))
 
 
 def find_night_close_from_daemon(

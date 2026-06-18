@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dome_daemon import find_night_close_from_daemon
+from dome_daemon import count_daemon_closes_on_night, find_night_close_from_daemon
 from weather_samples import load_dome_events, night_anchor_ut, to_night_ut
 
 
@@ -21,6 +21,8 @@ class DomeSummary:
     open_since: float | None
     last_close_source: str | None = None  # "scheduler" | "dome_daemon"
     daemon_close_utc: datetime | None = None
+    daemon_checked: bool = False
+    daemon_closes_on_night: int = 0
 
 
 def _interval_hours(t0: float, t1: float, anchor: float) -> float:
@@ -53,6 +55,8 @@ def _apply_close(
         open_since=open_ut,
         last_close_source=source,
         daemon_close_utc=daemon_close_utc,
+        daemon_checked=summary.daemon_checked,
+        daemon_closes_on_night=summary.daemon_closes_on_night,
     )
 
 
@@ -91,6 +95,8 @@ def dome_summary(
                 total_h += _interval_hours(open_ut, ut, anchor)
                 open_ut = None
 
+    daemon_checked = False
+    daemon_closes_on_night = 0
     summary = DomeSummary(
         first_open=first_open,
         last_close=last_close,
@@ -100,6 +106,8 @@ def dome_summary(
         open_since=open_ut,
         last_close_source=last_close_source,
         daemon_close_utc=daemon_close_utc,
+        daemon_checked=daemon_checked,
+        daemon_closes_on_night=daemon_closes_on_night,
     )
 
     need_daemon = (
@@ -109,6 +117,9 @@ def dome_summary(
         and dome_daemon_log
     )
     if need_daemon:
+        daemon_checked = dome_daemon_log.is_file()
+        if daemon_checked and night_date:
+            daemon_closes_on_night = count_daemon_closes_on_night(dome_daemon_log, night_date)
         found = find_night_close_from_daemon(
             dome_daemon_log,
             night_date,
@@ -125,6 +136,18 @@ def dome_summary(
                 anchor=anchor,
                 daemon_close_utc=close_utc,
             )
+        summary = DomeSummary(
+            first_open=summary.first_open,
+            last_close=summary.last_close,
+            total_open_h=summary.total_open_h,
+            intervals=summary.intervals,
+            still_open=summary.still_open,
+            open_since=summary.open_since,
+            last_close_source=summary.last_close_source,
+            daemon_close_utc=summary.daemon_close_utc,
+            daemon_checked=daemon_checked,
+            daemon_closes_on_night=daemon_closes_on_night,
+        )
 
     if first_open is None and not intervals and not summary.still_open and last_close is None:
         return None
@@ -181,7 +204,19 @@ def build_dome_section(
             dur = _interval_hours(t0, t1, anchor)
             lines.append(f"    {i:02d}  {t0:9.5f} - {t1:9.5f}  ({dur:.3f} h)")
     elif summary and summary.still_open and summary.open_since is not None:
-        lines.append(f"  still open from UT {summary.open_since:.5f} h (no close recorded)")
+        if summary.daemon_checked and summary.daemon_closes_on_night == 0:
+            lines.append(
+                f"  still open from UT {summary.open_since:.5f} h "
+                f"(scheduler log has no close; dome_daemon.log has 0 closes for this night)"
+            )
+        elif summary.daemon_checked:
+            lines.append(
+                f"  still open from UT {summary.open_since:.5f} h "
+                f"(scheduler log has no close; dome_daemon had "
+                f"{summary.daemon_closes_on_night} close(s) but none matched)"
+            )
+        else:
+            lines.append(f"  still open from UT {summary.open_since:.5f} h (no close recorded)")
     if summary and summary.total_open_h > 0:
         lines.append(f"  total open: {summary.total_open_h:.3f} h ({summary.total_open_h * 60:.1f} min)")
     elif summary and not summary.intervals and not summary.still_open:

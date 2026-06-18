@@ -29,6 +29,12 @@ def test_parse_daemon_timestamp() -> None:
   assert utc.year == 2026 and utc.month == 6 and utc.day == 2
   assert utc.hour == 10 and utc.minute == 7
 
+  line24 = "Tue Jun  9 06:07:31 -04 2026 iteration 1 : schmidt dome now closed"
+  dt24 = _parse_daemon_timestamp(line24)
+  assert dt24 is not None
+  utc24 = dt24.astimezone(timezone.utc)
+  assert utc24.hour == 10 and utc24.minute == 7
+
 
 def test_belongs_to_ut_night() -> None:
   utc = datetime(2026, 6, 2, 10, 7, 31, tzinfo=timezone.utc)
