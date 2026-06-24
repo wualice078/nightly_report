@@ -11,7 +11,8 @@ sys.path.insert(0, str(PACKAGE))
 
 from dome_daemon import count_daemon_closes_on_night, load_dome_daemon_closes
 from night_paths import diagnose_live_night, discover_live_nights, resolve_night_paths
-from practice_config import DIMM_LOG, DOME_DAEMON_LOG
+from practice_config import DIMM_LOG, DOME_DAEMON_LOG, QUESTCTL_LOG_DIR
+from questctl_log import count_questctl_closes_on_night, load_questctl_closes, questctl_logs_for_night
 from seeing_samples import load_dimm_samples
 
 
@@ -29,6 +30,7 @@ def main() -> int:
         print(f"    log.obs: {paths.log_obs}")
         print(f"    scheduler: {paths.scheduler_log}")
         print(f"    dimm.logs: {paths.dimm_log}")
+        print(f"    questctl logs: {paths.questctl_log_dir}")
     except FileNotFoundError:
         print("MISSING live/practice inputs:")
         print(diagnose_live_night(date))
@@ -45,6 +47,19 @@ def main() -> int:
             print(f"  last close in file: {closes[-1].isoformat()}")
     else:
         print("  file not found")
+
+    qdir = paths.questctl_log_dir or QUESTCTL_LOG_DIR
+    print(f"\nquestctl: {qdir}")
+    if qdir.is_dir():
+        logs = questctl_logs_for_night(qdir, date)
+        closes = load_questctl_closes(qdir, date)
+        n = count_questctl_closes_on_night(qdir, date)
+        print(f"  log files for night: {len(logs)}")
+        print(f"  CLOSE_CODE signals for UT night {date}: {n}")
+        if closes:
+            print(f"  last CLOSE_CODE UTC: {closes[-1].isoformat()}")
+    else:
+        print("  directory not found")
 
     sched = paths.scheduler_log
     if sched and sched.is_file():

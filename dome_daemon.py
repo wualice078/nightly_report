@@ -15,6 +15,7 @@ DAEMON_TS = re.compile(
     r"(?:(AM|PM)\s+)?([+-])(\d{2})\s+(\d{4})"
 )
 DAEMON_CLOSED = re.compile(r"schmidt dome now closed", re.IGNORECASE)
+DAEMON_CLOSING = re.compile(r"closing schmidt dome", re.IGNORECASE)
 
 _MONTH = {
     "Jan": 1,
@@ -133,3 +134,37 @@ def find_night_close_from_daemon(
 
     best = max(candidates, key=lambda x: x[0])
     return best[1], best[2]
+
+
+def daemon_close_note(daemon_log: Path | None, close_utc: datetime) -> str:
+    """
+    Classify a dome_daemon close for the report.
+
+    Manual end-of-night usually logs 'command is CLOSE' before 'closing schmidt dome'.
+    Weather/safety closes log La Silla domes closed or sun-up conditions.
+    """
+    if daemon_log is None or not daemon_log.is_file():
+        return "dome_daemon"
+    lines = daemon_log.read_text(encoding="utf-8", errors="replace").splitlines()
+    target = close_utc.astimezone(timezone.utc)
+    close_idx: int | None = None
+    for i, line in enumerate(lines):
+        if not DAEMON_CLOSED.search(line):
+            continue
+        local_dt = _parse_daemon_timestamp(line)
+        if local_dt is None:
+            continue
+        if abs((local_dt.astimezone(timezone.utc) - target).total_seconds()) < 2:
+            close_idx = i
+            break
+    if close_idx is None:
+        return "dome_daemon"
+
+    context = "\n".join(lines[max(0, close_idx - 20) : close_idx + 1]).lower()
+    if "command is close" in context:
+        return "manual close (operator CLOSE / closedome)"
+    if "lasilla domes are not open" in context:
+        return "weather/safety guard (La Silla domes closed)"
+    if "sun is up" in context:
+        return "weather/safety guard (sun up)"
+    return "dome_daemon"

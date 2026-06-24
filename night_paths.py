@@ -16,8 +16,10 @@ from practice_config import (
     OBSPLAN_ROOT,
     OBSPLAN_ROOTS,
     PRACTICE_DOME_DAEMON_LOG,
+    PRACTICE_QUESTCTL_LOG_DIR,
     PRACTICE_NIGHTS,
     PRACTICE_ROOT,
+    QUESTCTL_LOG_DIR,
 )
 
 
@@ -28,6 +30,7 @@ class NightPaths:
     log_obs: Path
     scheduler_log: Path | None
     dome_daemon_log: Path | None
+    questctl_log_dir: Path | None
     dimm_log: Path | None
     source: str
 
@@ -106,6 +109,7 @@ def _night_paths(
     log_obs: Path,
     sched: Path,
     daemon: Path | None,
+    questctl_dir: Path | None,
     source: str,
 ) -> NightPaths:
     return NightPaths(
@@ -114,6 +118,7 @@ def _night_paths(
         log_obs,
         sched if _is_file(sched) else None,
         daemon if daemon and _is_file(daemon) else None,
+        questctl_dir if questctl_dir and _is_dir(questctl_dir) else None,
         _resolve_dimm_log(log_obs.parent),
         source,
     )
@@ -126,7 +131,7 @@ def _practice_paths(date: str) -> NightPaths | None:
     if not _is_file(obsplan) or not _is_file(log_obs):
         return None
     return _night_paths(
-        date, obsplan, log_obs, night_dir / "logs" / f"{date}.log", PRACTICE_DOME_DAEMON_LOG, "practice"
+        date, obsplan, log_obs, night_dir / "logs" / f"{date}.log", PRACTICE_DOME_DAEMON_LOG, PRACTICE_QUESTCTL_LOG_DIR, "practice"
     )
 
 
@@ -179,7 +184,7 @@ def _live_paths(date: str) -> NightPaths | None:
             if not _is_file(obsplan):
                 continue
             return _night_paths(
-                date, obsplan, log_obs, live_dir / f"{date}.log", DOME_DAEMON_LOG, "live"
+                date, obsplan, log_obs, live_dir / f"{date}.log", DOME_DAEMON_LOG, QUESTCTL_LOG_DIR, "live"
             )
     return None
 

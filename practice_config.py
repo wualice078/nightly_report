@@ -61,7 +61,11 @@ OBSPLAN_ROOT = OBSPLAN_ROOTS[0]
 DOME_DAEMON_LOG = Path(
     os.environ.get("LS4_DOME_DAEMON_LOG", str(OBSERVER_ROOT / "logs/dome_daemon.log"))
 )
-_LS4_ROOT = Path(os.environ.get("LS4_ROOT", str(OBSERVER_ROOT / "quest-src-lasilla")))
+# On the mountain, LS4_ROOT is /home/observer; questctl/dimm logs live in ~/logs/.
+_LS4_ROOT = Path(os.environ.get("LS4_ROOT", str(OBSERVER_ROOT)))
+QUESTCTL_LOG_DIR = Path(
+    os.environ.get("LS4_QUESTCTL_LOG_DIR", str(OBSERVER_ROOT / "logs"))
+)
 SEEING_LOG = Path(os.environ.get("LS4_SEEING_LOG", str(OBSERVER_ROOT / "logs/seeing.logs")))
 DIMM_LOG = Path(os.environ.get("LS4_DIMM_LOG", str(_LS4_ROOT / "logs/dimm.logs")))
 ESO_DIMM_URL = os.environ.get(
@@ -71,6 +75,7 @@ ESO_DIMM_URL = os.environ.get(
 # Legacy name used by poll_seeing_log.py during Northwestern dev.
 ESO_SEEING_URL = os.environ.get("LS4_ESO_SEEING_URL", ESO_DIMM_URL)
 PRACTICE_DOME_DAEMON_LOG = OBSERVER_ROOT / "recent_logs/logfiles/dome_daemon.log"
+PRACTICE_QUESTCTL_LOG_DIR = OBSERVER_ROOT / "recent_logs/logfiles"
 GET_UT_DATE = Path(os.environ.get("LS4_GET_UT_DATE", str(OBSERVER_ROOT / "bin/get_ut_date")))
 
 # NUC: ~/nightly_report/   Cron: 0 7 * * * ~/nightly_report/send_morning_report.sh

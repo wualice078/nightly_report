@@ -1,10 +1,16 @@
 # Staging: `ntt_dome_status` DIMM hook
 
-Proposed change for `$LS4_ROOT/bin/ntt_dome_status` in `quest-src-lasilla` (not part of the nightly report runtime).
+Proposed change for `$LS4_ROOT/bin/ntt_dome_status` in `quest-src-lasilla`. **Not** part of the nightly report runtime and **not** applied by `git pull` on this repo.
 
-Adds an inline `curl` of ESO [`dimm.last`](https://www.ls.eso.org/lasilla/dimm/dimm.last) and appends one line to `$LS4_ROOT/logs/dimm.logs`. **Stdout is unchanged** (ASM FTP weather + OPEN/CLOSED for `weather_srv`).
+## What it does
 
-The nightly report reads `dimm.logs` only; if the file is missing, the DIMM column is `n/a`.
+- Adds an inline `curl` of ESO [`dimm.last`](https://www.ls.eso.org/lasilla/dimm/dimm.last).
+- Appends one line to `$LS4_ROOT/logs/dimm.logs` (~every 60 s when `ntt_dome_status` runs).
+- **Stdout is unchanged** (ASM FTP weather + OPEN/CLOSED for `weather_srv`).
+
+The nightly report reads `dimm.logs` only. Until this is deployed, the DIMM column shows **`n/a`** (the rest of the report still builds).
+
+**Dome close does not depend on this script** — dome close comes from questctl logs after `git pull` on `nightly_report`.
 
 ## Install (requires write access to quest-src-lasilla)
 

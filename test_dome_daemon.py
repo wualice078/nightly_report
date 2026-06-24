@@ -61,6 +61,33 @@ def test_find_close_for_june_night() -> None:
   assert close_utc.hour == 10
 
 
+def test_questctl_preferred_over_scheduler_open_only() -> None:
+    import tempfile
+
+    from practice_config import PRACTICE_QUESTCTL_LOG_DIR
+
+    line = (
+        "UT    :  22.62250  LST   :  21.887900  RA    :  21.858631  "
+        "Dec   : -29.288111  dome  : open  Focus :  27.970  Filter: UNKNOWN  "
+        "Temp  :  13.5  Humid :   9.0  Wnd Sp:   9.0  Wnd Dr:  52.0\n"
+    )
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
+        f.write(line)
+        sched = Path(f.name)
+
+    summary = dome_summary(
+        sched,
+        night_date="20260601",
+        questctl_log_dir=PRACTICE_QUESTCTL_LOG_DIR,
+        exposure_ut=[23.0, 8.5],
+    )
+    assert summary is not None
+    assert summary.last_close_source == "questctl"
+    assert summary.close_utc is not None
+    assert summary.close_utc.hour == 10
+    sched.unlink()
+
+
 def test_scheduler_close_preferred() -> None:
   from night_paths import resolve_night_paths
 
@@ -69,6 +96,7 @@ def test_scheduler_close_preferred() -> None:
       paths.scheduler_log,
       night_date=paths.date,
       dome_daemon_log=paths.dome_daemon_log,
+      questctl_log_dir=paths.questctl_log_dir,
       exposure_ut=[10.0],
   )
   assert summary is not None
@@ -82,6 +110,7 @@ def main() -> int:
       test_belongs_to_ut_night,
       test_load_practice_daemon_closes,
       test_find_close_for_june_night,
+      test_questctl_preferred_over_scheduler_open_only,
       test_scheduler_close_preferred,
   ]
   for t in tests:

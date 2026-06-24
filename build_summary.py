@@ -34,6 +34,18 @@ def _format_ut(ut: float) -> str:
     return f"{ut:.3f} h ({h:02d}:{m:02d}:{s:02d} UT)"
 
 
+def _close_source_label(source: str | None, note: str | None) -> str:
+    if source is None:
+        return ""
+    if note:
+        return f" ({note})"
+    if source == "dome_daemon":
+        return " (from dome_daemon.log)"
+    if source == "questctl":
+        return " (from questctl log)"
+    return ""
+
+
 def build_summary_section(
     obsplan: Path,
     log_obs: Path,
@@ -41,6 +53,7 @@ def build_summary_section(
     *,
     night_date: str | None = None,
     dome_daemon_log: Path | None = None,
+    questctl_log_dir: Path | None = None,
     exposure_ut: list[float] | None = None,
 ) -> str:
     planned = parse_obsplan(obsplan)
@@ -61,6 +74,7 @@ def build_summary_section(
         scheduler_log,
         night_date=night_date,
         dome_daemon_log=dome_daemon_log,
+        questctl_log_dir=questctl_log_dir,
         exposure_ut=exposure_ut,
     )
     if dome is None:
@@ -70,23 +84,21 @@ def build_summary_section(
     else:
         lines.append(f"  Dome first open:  {_format_ut(dome.first_open)}")
         if dome.last_close is not None:
-            src = ""
-            if dome.last_close_source == "dome_daemon":
-                src = " (from dome_daemon.log)"
-            lines.append(f"  Dome last close:  {_format_ut(dome.last_close)}{src}")
+            lines.append(
+                f"  Dome last close:  {_format_ut(dome.last_close)}"
+                f"{_close_source_label(dome.last_close_source, dome.close_note)}"
+            )
         elif dome.still_open:
+            parts = ["scheduler log ended open"]
             if dome.daemon_checked and dome.daemon_closes_on_night == 0:
-                lines.append(
-                    "  Dome last close:  n/a (scheduler log ended open; "
-                    "no dome_daemon close for this night)"
-                )
+                parts.append("no dome_daemon close")
             elif dome.daemon_checked:
-                lines.append(
-                    "  Dome last close:  n/a (scheduler log ended open; "
-                    f"dome_daemon had {dome.daemon_closes_on_night} close(s), none matched)"
-                )
-            else:
-                lines.append("  Dome last close:  n/a (still open at end of log)")
+                parts.append(f"dome_daemon {dome.daemon_closes_on_night} unmatched")
+            if dome.questctl_checked and dome.questctl_closes_on_night == 0:
+                parts.append("no questctl CLOSE")
+            elif dome.questctl_checked:
+                parts.append(f"questctl {dome.questctl_closes_on_night} unmatched")
+            lines.append(f"  Dome last close:  n/a ({'; '.join(parts)})")
         if dome.total_open_h > 0:
             lines.append(
                 f"  Dome total open:  {dome.total_open_h:.3f} h ({dome.total_open_h * 60:.1f} min)"
