@@ -72,18 +72,32 @@ The exposure table **DIMM** column uses **only** `dimm.logs` (from `ntt_dome_sta
 
 If `dimm.logs` is missing or empty, DIMM shows **n/a**; the rest of the report still generates.
 
-### Mountain (recommended — Kenneth)
+### Mountain DIMM ingest (pending Kenneth — not in this repo)
 
-Deploy [`mountain_deploy/ntt_dome_status`](mountain_deploy/ntt_dome_status) — production script plus inline ESO `dimm.last` fetch/append to `$LS4_ROOT/logs/dimm.logs` (**stdout unchanged**).
+The report reads `$LS4_ROOT/logs/dimm.logs`. That file is filled by a small addition to **`$LS4_ROOT/bin/ntt_dome_status`** in `quest-src-lasilla` (owned by `ls4`), not by anything in `nightly_report`.
 
-Install as `ls4` on ls4-workstn:
+**Stdout stays unchanged** (ASM FTP + OPEN/CLOSED). Insert **before** the final `if ( $ntt_status == "OPEN"` block:
 
-```bash
-diff -u $LS4_ROOT/bin/ntt_dome_status ~/nightly_report/mountain_deploy/ntt_dome_status
-cp ~/nightly_report/mountain_deploy/ntt_dome_status $LS4_ROOT/bin/
+```tcsh
+# ESO DIMM seeing for nightly report — append to logs/dimm.logs (stdout unchanged).
+set dimm_url = "https://www.ls.eso.org/lasilla/dimm/dimm.last"
+if ($?LS4_ESO_DIMM_URL) set dimm_url = "$LS4_ESO_DIMM_URL"
+set dimm_tmp = "/tmp/eso_dimm_${$}.tmp"
+curl -sk --max-time 15 -o $dimm_tmp "$dimm_url" >& /dev/null
+if ( $status == 0 && -s $dimm_tmp ) then
+   set dimm_line = `cat $dimm_tmp`
+   set dimm_arcsec = `echo "$dimm_line" | sed -n 's/.*[Ss]eeing=\([0-9.][0-9.]*\).*/\1/p'`
+   if ( "$dimm_arcsec" == "" ) set dimm_arcsec = `echo "$dimm_line" | awk '{print $1}'`
+   set dimm_ok = `echo "$dimm_arcsec" | awk '{ if ($1 > 0 && $1 < 10) print "ok" }'`
+   if ( "$dimm_ok" == "ok" ) then
+      set dimm_stamp = `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+      echo "$dimm_stamp $dimm_arcsec" >>! "$LS4_ROOT/logs/dimm.logs"
+   endif
+endif
+rm -f $dimm_tmp
 ```
 
-Samples arrive **~every 60 s** while `dome_daemon` runs (`weather` → `ntt_dome_status`). The report joins the nearest sample to each exposure.
+After Kenneth approves, apply in `quest-src-lasilla` / `$LS4_ROOT/bin/` as `ls4`. Samples arrive ~every 60 s while the weather path runs; the report joins the nearest sample to each exposure.
 
 After the morning report, live `dimm.logs` is archived to `~/data/YYYYMMDD/logs/dimm.logs` and cleared.
 
@@ -106,7 +120,6 @@ nightly_report/
   seeing_samples.py         load dimm.logs / seeing.logs, join to exposures
   dome_daemon.py            parse dome_daemon.log
   check_night.py            one-night diagnostics
-  mountain_deploy/          DIMM hooks for quest-src-lasilla (see README there)
   poll_seeing_*.py/sh       optional Northwestern ESO poller
   test_*.py                 unit / practice tests
   reports/                  generated report_YYYYMMDD.txt (gitignored)
