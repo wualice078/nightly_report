@@ -1,0 +1,145 @@
+#!/bin/csh
+#
+# ntt_dome_status
+#
+# check status of La Silla dome states and weather condition
+#
+set TEST = 0
+set asmWs = "134.171.80.34"
+set weather_file = /tmp/weather.tmp
+set dome_file = "dome.last"
+set meteo_file = "meteo.last"
+set DATE_TO_TIME_PROGRAM = "date_to_time"
+set DATE_TOLERANCE = 300
+set weather_state = "0.0 0.0 0.0 0.0 0.0 0.0"
+
+if ( ! $?LS4_ROOT ) then
+   echo "LS4_ROOT is not a defined environment variable"
+   exit -1
+endif
+
+cd $LS4_ROOT/logs
+#
+# down latest dome states from ftp site
+#
+if ( -e $dome_file ) rm $dome_file
+wget --timeout 3 -N ftp://$asmWs/pub/$dome_file >& $weather_file
+#
+# down latest weather status from ftp site
+#
+if ( -e $meteo_file ) rm $meteo_file
+wget --timeout 3 -N ftp://$asmWs/pub/$meteo_file >>& $weather_file
+#
+# if meteo file exists, read temperature, humidity, pressure, windspeed
+#
+if ( -e $meteo_file) then
+   set weather_state = `parse_meteo $meteo_file`
+endif
+#
+# if dome file was not obtained by wget, exit with error message
+#
+if ( ! -e $dome_file ) then
+    set d = `date -u +"%Y-%m-%dT%H:%M:%S"`
+    echo "$d ERROR can't connect to $asmWs"
+    exit
+endif
+
+# if the NNT dome status is not available, exit with error message
+# otherwise read its status
+set l = `grep NTT $dome_file`
+if ( $#l != 2 ) then
+    echo "$date ERROR NNT dome status not available"
+    exit
+else
+    set ntt_status = $l[2]
+endif
+
+# if the 2P2 dome status is not available, exit with error message
+set l = `grep 2P2 $dome_file`
+if ( $#l != 2 ) then
+    echo "$date ERROR 2P2 dome status not available"
+    exit
+else
+    set twoptwo_status = $l[2]
+endif
+
+# read the log date from the first line of the dome files. It should
+# have format yyyy-mm-ddTHH:MM:SS
+#
+set l = `head -n 1 $dome_file`
+# 
+# make sure 11th character in log date is "T"
+set c = `echo $l | cut -c 11-11`
+#
+if ( $c != "T" ) then
+    echo "$date ERROR  log date not available"
+    exit
+endif
+
+# read the year,month,date,hour, and minute from the log date string
+# and convert to seconds since Jan 1 1970 0H.
+
+set date0 = $l
+set year0 = `echo $date0 | cut -c 1-4`
+set month0 = `echo $date0 | cut -c 6-7`
+set day0 = `echo $date0 | cut -c 9-10`
+set hour0 = `echo $date0 | cut -c 12-13`
+set minute0 = `echo $date0 | cut -c 15-16`
+set second0 = `echo $date0 | cut -c 18-19`
+set t0 = `$DATE_TO_TIME_PROGRAM $year0 $month0 $day0 $hour0 $minute0 $second0`
+
+# get the date from the system clock  and convert to seconds since Jan 1 1970
+
+set date = `date -u`
+set year = `date -u +"%Y"`
+set month = `date -u +"%m"`
+set day = `date -u +"%d"`
+set hour = `date -u +"%H"`
+set minute = `date -u +"%M"`
+set second = `date -u +"%S"`
+set t = `$DATE_TO_TIME_PROGRAM $year $month $day $hour $minute $second`
+set date = $year"-"$month"-"$day"T"$hour":"$minute":"$second
+
+
+if ( $TEST == 1 ) then
+    echo $date "OPEN"
+    exit
+endif
+
+# compare the system clock time to the log time and make sure they
+#differ by no more than DATE_TOLERANCE
+
+set dt = 0
+@ dt = $t - $t0
+if ( $dt < 0 ) then
+   @ dt = $t0 - $t
+endif
+if ( $dt > $DATE_TOLERANCE ) then
+   echo "ERROR log time out of date by $dt seconds $date0 $date"
+   exit
+endif
+
+# ESO DIMM seeing for nightly report — append to logs/dimm.logs (stdout unchanged).
+set dimm_url = "https://www.ls.eso.org/lasilla/dimm/dimm.last"
+if ($?LS4_ESO_DIMM_URL) set dimm_url = "$LS4_ESO_DIMM_URL"
+set dimm_tmp = "/tmp/eso_dimm_${$}.tmp"
+curl -sk --max-time 15 -o $dimm_tmp "$dimm_url" >& /dev/null
+if ( $status == 0 && -s $dimm_tmp ) then
+   set dimm_line = `cat $dimm_tmp`
+   set dimm_arcsec = `echo "$dimm_line" | sed -n 's/.*[Ss]eeing=\([0-9.][0-9.]*\).*/\1/p'`
+   if ( "$dimm_arcsec" == "" ) set dimm_arcsec = `echo "$dimm_line" | awk '{print $1}'`
+   set dimm_ok = `echo "$dimm_arcsec" | awk '{ if ($1 > 0 && $1 < 10) print "ok" }'`
+   if ( "$dimm_ok" == "ok" ) then
+      set dimm_stamp = `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+      echo "$dimm_stamp $dimm_arcsec" >>! "$LS4_ROOT/logs/dimm.logs"
+   endif
+endif
+rm -f $dimm_tmp
+
+if ( $ntt_status == "OPEN" && $twoptwo_status == "OPEN" ) then
+  echo "$date $weather_state $OPEN"
+else if ($ntt_status == "CLOSED" && $twoptwo_status == "CLOSED" ) then
+  echo "$date $weather_state CLOSED"
+else
+ echo "$date $weather_state UNCERTAIN $ntt_status $twoptwo_status"
+endif
