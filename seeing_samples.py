@@ -17,9 +17,9 @@ from practice_config import ESO_SEEING_URL, SEEING_LOG
 from weather_samples import to_night_ut
 
 SEEING_LOG_LINE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\s+([\d.]+)\s*$"
+    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\s+([\d.]+)(?:\s+(\S+))?\s*$"
 )
-# Cron polls every 15 min — match weather join window (10 min).
+# Per-exposure scheduler hook — nearest match within 10 min.
 SEEING_JOIN_TOL = 10.0 / 60.0
 
 

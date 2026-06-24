@@ -90,7 +90,7 @@ chmod +x $LS4_ROOT/bin/append_eso_dimm_log.csh
 
 After the morning report, live `dimm.logs` is archived to `~/data/YYYYMMDD/logs/dimm.logs` and cleared.
 
-**Note:** DIMM is logged when `ntt_dome_status` runs (weather server requests), not automatically per exposure. Per-exposure DIMM requires an additional scheduler hook — see `mountain_deploy/README.md`.
+**Note:** DIMM is logged **per exposure** once the scheduler patch is applied (`mountain_deploy/scheduler_dimm.patch`). Until then, samples come only when `ntt_dome_status` runs.
 
 ### Northwestern dev poller (optional)
 

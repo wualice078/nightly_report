@@ -39,5 +39,9 @@ set check = `echo "$arcsec" | awk '{ if ($1 > 0 && $1 < 10) print "ok" }'`
 if ( "$check" != "ok" ) exit 1
 
 set stamp = `date -u +"%Y-%m-%dT%H:%M:%SZ"`
-echo "$stamp $arcsec" >>! "$log"
+if ($#argv >= 1 && "$argv[1]" != "") then
+   echo "$stamp $arcsec $argv[1]" >>! "$log"
+else
+   echo "$stamp $arcsec" >>! "$log"
+endif
 exit 0

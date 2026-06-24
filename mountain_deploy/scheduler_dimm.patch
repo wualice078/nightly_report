@@ -1,0 +1,44 @@
+--- a/src/scheduler.c
++++ b/src/scheduler.c
+@@ -65,6 +65,7 @@
+ */
+ 
+ #include "scheduler.h"
++#include <stdlib.h>
+ #include <unistd.h>
+ 
+ // do not wait for readout of exposure before moving to next field.
+@@ -1570,6 +1571,22 @@
+    Print diagnostic messages to stderr. Print the status of each
+    field to output (this serves as the  exposure log). */
+ 
++static void append_eso_dimm_log(const char *fits_name)
++{
++    const char *root;
++    char cmd[768];
++
++    root = getenv("LS4_ROOT");
++    if (root == NULL || root[0] == '\0')
++        return;
++    if (fits_name != NULL && fits_name[0] != '\0')
++        snprintf(cmd, sizeof(cmd),
++            "csh \"%s/bin/append_eso_dimm_log.csh\" \"%s\" >& /dev/null",
++            root, fits_name);
++    else
++        snprintf(cmd, sizeof(cmd),
++            "csh \"%s/bin/append_eso_dimm_log.csh\" >& /dev/null", root);
++    if (system(cmd) == -1)
++        fprintf(stderr, "observe_next_field: append_eso_dimm_log failed\n");
++}
++
+ int observe_next_field(Field *sequence, int index, int index_prev,
+     double jd, double *dt, Night_Times *nt, bool wait_flag,
+     FILE *output,Telescope_Status *tel_status, Camera_Status *cam_status,
+@@ -2136,6 +2153,7 @@ int observe_next_field(Field *sequence, int index, int index_prev,
+            fprintf(output,"\n");
+         }
+         fflush(output);
++        append_eso_dimm_log(filename);
+      }
+ 
+      if(n<num_exposures){

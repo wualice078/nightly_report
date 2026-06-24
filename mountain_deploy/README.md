@@ -6,6 +6,8 @@ Kenneth's pattern: fetch ESO [`dimm.last`](https://www.ls.eso.org/lasilla/dimm/d
 
 See also the top-level [README](../README.md) for how `nightly_report` consumes `dimm.logs`.
 
+**Per-exposure DIMM:** apply [scheduler_dimm.patch](scheduler_dimm.patch) and rebuild scheduler — see [SCHEDULER_DIMM.md](SCHEDULER_DIMM.md).
+
 ## Install on ls4-workstn (as `ls4` or with write access to quest-src-lasilla)
 
 ```bash
@@ -39,4 +41,5 @@ scheduler TCS `weather` runs. DIMM is appended **only when `ntt_dome_status` run
 (i.e. when `weather_srv.pl` gets a socket request).
 
 For **per-exposure** DIMM, also call `append_eso_dimm_log.csh` from the scheduler
-after each `log.obs` write (separate follow-up; not required for this patch).
+after each `log.obs` write — apply `mountain_deploy/scheduler_dimm.patch` and
+`make install` in `ls4-scheduler` (see `mountain_deploy/SCHEDULER_DIMM.md`).
