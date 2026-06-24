@@ -1,5 +1,6 @@
 reports/*.txt
 reports/cron_morning.log
+logs/seeing_poll.log
 __pycache__/
 *.pyc
 *.pyo

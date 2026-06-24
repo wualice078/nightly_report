@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from seeing_samples import dimm_for_exposure, load_seeing_samples
 from weather_samples import (
     load_dome_events,
     load_scheduler_weather,
@@ -71,12 +72,24 @@ def exposure_ut_list(log_obs: Path) -> list[float]:
     return uts
 
 
-def _exposure_table(title: str, rows: list[dict], weather, anchor: float) -> list[str]:
+def _exposure_table(
+    title: str,
+    rows: list[dict],
+    weather,
+    eso_seeing,
+    anchor: float,
+) -> list[str]:
     lines = [title, f"  {'UT(h)':>6}  {'tag':<20}  {'RA':>7}  {'Dec':>7}  "
              f"{'Temp':>4}  {'RH%':>3}  {'Wind':>4}  {'Dir':>4}  {'DIMM':>4}  file"]
     for r in rows:
-        w = nearest_on_night(to_night_ut(r["ut"], anchor), weather, anchor, EXPOSURE_TOL)
-        dimm = w.seeing if w and w.seeing else "n/a"
+        night_ut = to_night_ut(r["ut"], anchor)
+        w = nearest_on_night(night_ut, weather, anchor, EXPOSURE_TOL)
+        dimm = dimm_for_exposure(
+            night_ut,
+            anchor,
+            w.seeing if w else None,
+            eso_seeing,
+        )
         if w:
             wx = f"{w.temp:>4}  {w.humid:>3}  {w.wind:>4}  {w.wind_dir:>4}"
         else:
@@ -89,9 +102,16 @@ def _exposure_table(title: str, rows: list[dict], weather, anchor: float) -> lis
     return lines
 
 
-def build_exposure_section(log_obs: Path, scheduler_log: Path | None) -> str:
+def build_exposure_section(
+    log_obs: Path,
+    scheduler_log: Path | None,
+    *,
+    night_date: str | None = None,
+    seeing_log: Path | None = None,
+) -> str:
     lines = ["=== Exposures ===", f"  log.obs: {log_obs}", "  RA in hours, Dec in degrees"]
     weather = load_scheduler_weather(scheduler_log)
+    eso_seeing = load_seeing_samples(seeing_log, night_date) if night_date else []
 
     rows = []
     for line in log_obs.read_text().splitlines():
@@ -112,13 +132,13 @@ def build_exposure_section(log_obs: Path, scheduler_log: Path | None) -> str:
 
     lines.append("")
     if obs:
-        lines += _exposure_table(f"  Observing ({len(obs)})", obs, weather, anchor)
+        lines += _exposure_table(f"  Observing ({len(obs)})", obs, weather, eso_seeing, anchor)
     else:
         lines.append("  Observing (0)")
 
     lines.append("")
     if cal:
-        lines += _exposure_table(f"  Calibration ({len(cal)})", cal, weather, anchor)
+        lines += _exposure_table(f"  Calibration ({len(cal)})", cal, weather, eso_seeing, anchor)
     else:
         lines.append("  Calibration (0)")
 

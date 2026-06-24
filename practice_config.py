@@ -61,6 +61,15 @@ OBSPLAN_ROOT = OBSPLAN_ROOTS[0]
 DOME_DAEMON_LOG = Path(
     os.environ.get("LS4_DOME_DAEMON_LOG", str(OBSERVER_ROOT / "logs/dome_daemon.log"))
 )
+_LS4_ROOT = Path(os.environ.get("LS4_ROOT", str(OBSERVER_ROOT / "quest-src-lasilla")))
+SEEING_LOG = Path(os.environ.get("LS4_SEEING_LOG", str(OBSERVER_ROOT / "logs/seeing.logs")))
+DIMM_LOG = Path(os.environ.get("LS4_DIMM_LOG", str(_LS4_ROOT / "logs/dimm.logs")))
+ESO_DIMM_URL = os.environ.get(
+    "LS4_ESO_DIMM_URL",
+    "https://www.ls.eso.org/lasilla/dimm/dimm.last",
+)
+# Legacy name used by poll_seeing_log.py during Northwestern dev.
+ESO_SEEING_URL = os.environ.get("LS4_ESO_SEEING_URL", ESO_DIMM_URL)
 PRACTICE_DOME_DAEMON_LOG = OBSERVER_ROOT / "recent_logs/logfiles/dome_daemon.log"
 GET_UT_DATE = Path(os.environ.get("LS4_GET_UT_DATE", str(OBSERVER_ROOT / "bin/get_ut_date")))
 

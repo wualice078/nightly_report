@@ -29,7 +29,8 @@ from build_summary import build_summary_section
 from build_weather_report import build_weather_section
 from compare_obsplan_log import build_fields_section
 from night_paths import NightPaths, get_default_ut_date, resolve_night_paths
-from practice_config import MORNING_REPORT_LIVE_ONLY
+from practice_config import DIMM_LOG, MORNING_REPORT_LIVE_ONLY, SEEING_LOG
+from seeing_samples import archive_and_clear_seeing_log
 
 
 def build_missing_report(date: str, error: str) -> str:
@@ -61,7 +62,12 @@ def build_full_report(paths: NightPaths) -> str:
             ),
             build_fields_section(paths.obsplan, paths.log_obs),
             "\n",
-            build_exposure_section(paths.log_obs, paths.scheduler_log),
+            build_exposure_section(
+                paths.log_obs,
+                paths.scheduler_log,
+                night_date=paths.date,
+                seeing_log=paths.seeing_log,
+            ),
             build_dome_section(
                 paths.scheduler_log,
                 night_date=paths.date,
@@ -82,6 +88,16 @@ def main() -> int:
     ap.add_argument("--no-practice-fallback", action="store_true", help="Live data only (same as mountain default)")
     ap.add_argument("--subject")
     ap.add_argument("--report", type=Path)
+    ap.add_argument(
+        "--cleanup-seeing",
+        action="store_true",
+        help="Archive tonight's seeing.logs to the night data dir and truncate the live file",
+    )
+    ap.add_argument(
+        "--no-cleanup-seeing",
+        action="store_true",
+        help="Keep seeing.logs after report (default for manual --date runs)",
+    )
     args = ap.parse_args()
 
     date = args.date or get_default_ut_date()
@@ -107,6 +123,20 @@ def main() -> int:
 
     report.write_text(text)
     print(f"Wrote {report}")
+
+    if paths is not None and "DATA MISSING" not in text:
+        cleanup = args.cleanup_seeing or (
+            not args.no_cleanup_seeing
+            and args.date is None
+            and paths.source == "live"
+        )
+        if cleanup:
+            archive = paths.log_obs.parent / "dimm.logs"
+            n = archive_and_clear_seeing_log(DIMM_LOG, paths.date, archive)
+            if n == 0:
+                archive = paths.log_obs.parent / "seeing.logs"
+                n = archive_and_clear_seeing_log(SEEING_LOG, paths.date, archive)
+            print(f"Cleared DIMM/seeing logs ({n} samples archived to {archive})")
 
     if args.build_only or not args.to:
         return 0

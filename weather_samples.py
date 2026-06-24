@@ -3,8 +3,7 @@
 Shared weather/dome parsing for nightly report sections.
 
 Weather today: scheduler log (YYYYMMDD.log) Temp/Humid/Wnd.
-DIMM seeing: not in logs yet — add ingest on mountain when ASM/ESO
-data is available; SEEING_LINE regex is ready for scheduler lines.
+DIMM seeing: scheduler line if present, else ESO dimm.logs from ntt_dome_status.
 """
 
 from __future__ import annotations
