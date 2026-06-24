@@ -1,27 +1,25 @@
 # Mountain deploy: ESO DIMM in ntt_dome_status
 
-Staging copies for **ls4-workstn** (`quest-src-lasilla` is owned by `ls4`; edit here, then `cp` into `$LS4_ROOT/bin/`).
+Staging copy for **ls4-workstn** (`quest-src-lasilla` is owned by `ls4`; edit here, then `cp` into `$LS4_ROOT/bin/`).
 
-Kenneth's pattern: fetch ESO [`dimm.last`](https://www.ls.eso.org/lasilla/dimm/dimm.last), append to `$LS4_ROOT/logs/dimm.logs`, **without changing** `ntt_dome_status` stdout (ASM FTP + OPEN/CLOSED unchanged).
+[`ntt_dome_status`](ntt_dome_status) is production script plus an inline block that `curl`s ESO [`dimm.last`](https://www.ls.eso.org/lasilla/dimm/dimm.last) and appends to `$LS4_ROOT/logs/dimm.logs`. **Stdout is unchanged** (ASM FTP + OPEN/CLOSED for `weather_srv`).
 
-See also the top-level [README](../README.md) for how `nightly_report` consumes `dimm.logs`.
+See the top-level [README](../README.md) for how `nightly_report` consumes `dimm.logs`.
 
-**Per-exposure DIMM:** apply [scheduler_dimm.patch](scheduler_dimm.patch) and rebuild scheduler — see [SCHEDULER_DIMM.md](SCHEDULER_DIMM.md).
-
-## Install on ls4-workstn (as `ls4` or with write access to quest-src-lasilla)
+## Install on ls4-workstn (as `ls4`)
 
 ```bash
-cp ~/nightly_report/mountain_deploy/append_eso_dimm_log.csh $LS4_ROOT/bin/
+diff -u $LS4_ROOT/bin/ntt_dome_status ~/nightly_report/mountain_deploy/ntt_dome_status
 cp ~/nightly_report/mountain_deploy/ntt_dome_status $LS4_ROOT/bin/
-chmod +x $LS4_ROOT/bin/append_eso_dimm_log.csh $LS4_ROOT/bin/ntt_dome_status
+chmod +x $LS4_ROOT/bin/ntt_dome_status
 # also copy into weather_srv/ source tree if you use make install there
 ```
 
-## Test append only
+## Test on mountain
 
 ```tcsh
 setenv LS4_ROOT ~/quest-src-lasilla   # or your LS4_ROOT
-csh ~/nightly_report/mountain_deploy/append_eso_dimm_log.csh
+$LS4_ROOT/bin/ntt_dome_status
 tail -3 $LS4_ROOT/logs/dimm.logs
 ```
 
@@ -36,10 +34,6 @@ Parsed from ESO `dimm.last` lines like:
 
 ## Collection frequency
 
-This does **not** change when ASM `meteo.last` / `dome.last` are fetched, or when
-scheduler TCS `weather` runs. DIMM is appended **only when `ntt_dome_status` runs**
-(i.e. when `weather_srv.pl` gets a socket request).
+DIMM is appended whenever `ntt_dome_status` runs — typically **~every 60 s** while `dome_daemon` is up at night (`weather` → `weather_srv` → `ntt_dome_status`). That is enough for the nightly report (nearest sample within 10 min per exposure).
 
-For **per-exposure** DIMM, also call `append_eso_dimm_log.csh` from the scheduler
-after each `log.obs` write — apply `mountain_deploy/scheduler_dimm.patch` and
-`make install` in `ls4-scheduler` (see `mountain_deploy/SCHEDULER_DIMM.md`).
+No scheduler patch required.

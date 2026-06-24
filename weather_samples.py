@@ -3,7 +3,7 @@
 Shared weather/dome parsing for nightly report sections.
 
 Weather today: scheduler log (YYYYMMDD.log) Temp/Humid/Wnd.
-DIMM seeing: scheduler line if present, else ESO dimm.logs from ntt_dome_status.
+DIMM seeing: ESO dimm.logs only (nearest sample per exposure).
 """
 
 from __future__ import annotations
@@ -22,10 +22,6 @@ DOME_LINE = re.compile(
     r"UT\s*:\s*([\d.]+)\s+.*?\bdome\s*:\s*(\w+)",
     re.IGNORECASE,
 )
-SEEING_LINE = re.compile(
-    r"(?:seeing|DIMM|dimm)\s*:\s*([\d.]+)",
-    re.IGNORECASE,
-)
 
 GRID_STEP = 0.5  # 30 minutes in decimal UT hours
 
@@ -41,7 +37,6 @@ class WeatherSample:
     humid: str
     wind: str
     wind_dir: str
-    seeing: str | None = None
 
 
 def load_scheduler_weather(path: Path | None) -> list[WeatherSample]:
@@ -52,7 +47,6 @@ def load_scheduler_weather(path: Path | None) -> list[WeatherSample]:
         m = WEATHER_LINE.search(line)
         if not m:
             continue
-        sm = SEEING_LINE.search(line)
         out.append(
             WeatherSample(
                 float(m.group(1)),
@@ -60,7 +54,6 @@ def load_scheduler_weather(path: Path | None) -> list[WeatherSample]:
                 m.group(3),
                 m.group(4),
                 m.group(5),
-                sm.group(1) if sm else None,
             )
         )
     return out

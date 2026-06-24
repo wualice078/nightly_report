@@ -56,11 +56,12 @@ def test_nearest_seeing_on_night() -> None:
     assert hit.arcsec == "0.90"
 
 
-def test_dimm_for_exposure_prefers_scheduler() -> None:
+def test_dimm_for_exposure_nearest_sample() -> None:
     from seeing_samples import SeeingSample
 
     samples = [SeeingSample(23.5, "0.90")]
-    assert dimm_for_exposure(23.52, 23.0, "0.55", samples) == "0.55"
+    assert dimm_for_exposure(23.52, 23.0, samples) == "0.90"
+    assert dimm_for_exposure(23.0, 23.0, []) == "n/a"
 
 
 def test_format_arcsec() -> None:
@@ -92,7 +93,7 @@ def main() -> int:
         test_parse_log_line,
         test_load_seeing_samples_filters_night,
         test_nearest_seeing_on_night,
-        test_dimm_for_exposure_prefers_scheduler,
+        test_dimm_for_exposure_nearest_sample,
         test_format_arcsec,
         test_archive_and_clear_seeing_log,
     ]

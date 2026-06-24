@@ -18,7 +18,6 @@ from practice_config import (
     PRACTICE_DOME_DAEMON_LOG,
     PRACTICE_NIGHTS,
     PRACTICE_ROOT,
-    SEEING_LOG,
 )
 
 
@@ -29,7 +28,7 @@ class NightPaths:
     log_obs: Path
     scheduler_log: Path | None
     dome_daemon_log: Path | None
-    seeing_log: Path | None
+    dimm_log: Path | None
     source: str
 
 
@@ -94,29 +93,28 @@ def practice_night_list() -> list[str]:
     return discover_practice_nights()
 
 
+def _resolve_dimm_log(log_dir: Path) -> Path | None:
+    for candidate in (log_dir / "dimm.logs", DIMM_LOG):
+        if _is_file(candidate):
+            return candidate
+    return None
+
+
 def _night_paths(
     date: str,
     obsplan: Path,
     log_obs: Path,
     sched: Path,
     daemon: Path | None,
-    seeing: Path | None,
     source: str,
 ) -> NightPaths:
-    log_dir = log_obs.parent
-    for candidate in (log_dir / "dimm.logs", DIMM_LOG, log_dir / "seeing.logs", seeing):
-        if candidate and _is_file(candidate):
-            night_dimm = candidate
-            break
-    else:
-        night_dimm = seeing
     return NightPaths(
         date,
         obsplan,
         log_obs,
         sched if _is_file(sched) else None,
         daemon if daemon and _is_file(daemon) else None,
-        night_dimm,
+        _resolve_dimm_log(log_obs.parent),
         source,
     )
 
@@ -128,7 +126,7 @@ def _practice_paths(date: str) -> NightPaths | None:
     if not _is_file(obsplan) or not _is_file(log_obs):
         return None
     return _night_paths(
-        date, obsplan, log_obs, night_dir / "logs" / f"{date}.log", PRACTICE_DOME_DAEMON_LOG, None, "practice"
+        date, obsplan, log_obs, night_dir / "logs" / f"{date}.log", PRACTICE_DOME_DAEMON_LOG, "practice"
     )
 
 
@@ -181,7 +179,7 @@ def _live_paths(date: str) -> NightPaths | None:
             if not _is_file(obsplan):
                 continue
             return _night_paths(
-                date, obsplan, log_obs, live_dir / f"{date}.log", DOME_DAEMON_LOG, DIMM_LOG, "live"
+                date, obsplan, log_obs, live_dir / f"{date}.log", DOME_DAEMON_LOG, "live"
             )
     return None
 

@@ -11,8 +11,8 @@ sys.path.insert(0, str(PACKAGE))
 
 from dome_daemon import count_daemon_closes_on_night, load_dome_daemon_closes
 from night_paths import diagnose_live_night, discover_live_nights, resolve_night_paths
-from practice_config import DOME_DAEMON_LOG, SEEING_LOG
-from seeing_samples import load_seeing_samples
+from practice_config import DIMM_LOG, DOME_DAEMON_LOG
+from seeing_samples import load_dimm_samples
 
 
 def main() -> int:
@@ -28,7 +28,7 @@ def main() -> int:
         print(f"    obsplan: {paths.obsplan}")
         print(f"    log.obs: {paths.log_obs}")
         print(f"    scheduler: {paths.scheduler_log}")
-        print(f"    seeing log: {paths.seeing_log}")
+        print(f"    dimm.logs: {paths.dimm_log}")
     except FileNotFoundError:
         print("MISSING live/practice inputs:")
         print(diagnose_live_night(date))
@@ -56,18 +56,18 @@ def main() -> int:
         if hits:
             print(f"  last: {hits[-1][:120]}")
 
-    seeing_path = paths.seeing_log or SEEING_LOG
-    print(f"\nseeing.logs: {seeing_path}")
-    if seeing_path.is_file():
-        samples = load_seeing_samples(seeing_path, date)
+    dimm_path = paths.dimm_log or DIMM_LOG
+    print(f"\ndimm.logs: {dimm_path}")
+    if dimm_path.is_file():
+        samples = load_dimm_samples(dimm_path, date)
         print(f"  samples for UT night {date}: {len(samples)}")
         if samples:
             print(f"  first: UT {samples[0].ut:.3f} arcsec {samples[0].arcsec}")
             print(f"  last:  UT {samples[-1].ut:.3f} arcsec {samples[-1].arcsec}")
-        elif seeing_path == SEEING_LOG:
-            print("  (empty — cleared after morning report; check data/.../logs/seeing.logs)")
+        elif dimm_path == DIMM_LOG:
+            print("  (empty — cleared after morning report; check data/.../logs/dimm.logs)")
     else:
-        print("  file not found (run poll_seeing_log.py during the night)")
+        print("  file not found (deploy ntt_dome_status DIMM hook on mountain)")
     return 0
 
 

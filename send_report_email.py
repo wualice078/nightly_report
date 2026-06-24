@@ -29,8 +29,8 @@ from build_summary import build_summary_section
 from build_weather_report import build_weather_section
 from compare_obsplan_log import build_fields_section
 from night_paths import NightPaths, get_default_ut_date, resolve_night_paths
-from practice_config import DIMM_LOG, MORNING_REPORT_LIVE_ONLY, SEEING_LOG
-from seeing_samples import archive_and_clear_seeing_log
+from practice_config import DIMM_LOG, MORNING_REPORT_LIVE_ONLY
+from seeing_samples import archive_and_clear_dimm_log
 
 
 def build_missing_report(date: str, error: str) -> str:
@@ -66,7 +66,7 @@ def build_full_report(paths: NightPaths) -> str:
                 paths.log_obs,
                 paths.scheduler_log,
                 night_date=paths.date,
-                seeing_log=paths.seeing_log,
+                dimm_log=paths.dimm_log,
             ),
             build_dome_section(
                 paths.scheduler_log,
@@ -132,11 +132,14 @@ def main() -> int:
         )
         if cleanup:
             archive = paths.log_obs.parent / "dimm.logs"
-            n = archive_and_clear_seeing_log(DIMM_LOG, paths.date, archive)
-            if n == 0:
-                archive = paths.log_obs.parent / "seeing.logs"
-                n = archive_and_clear_seeing_log(SEEING_LOG, paths.date, archive)
-            print(f"Cleared DIMM/seeing logs ({n} samples archived to {archive})")
+            try:
+                n = archive_and_clear_dimm_log(DIMM_LOG, paths.date, archive)
+                print(f"Cleared dimm.logs ({n} samples archived to {archive})")
+            except OSError as exc:
+                print(
+                    f"warning: dimm.logs cleanup skipped ({exc}); report was still written",
+                    file=sys.stderr,
+                )
 
     if args.build_only or not args.to:
         return 0

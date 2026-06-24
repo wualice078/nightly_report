@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ESO DIMM samples from $LS4_ROOT/logs/dimm.logs (ntt_dome_status / append_eso_dimm_log.csh)."""
+"""ESO DIMM samples from $LS4_ROOT/logs/dimm.logs (ntt_dome_status)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from weather_samples import to_night_ut
 SEEING_LOG_LINE = re.compile(
     r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\s+([\d.]+)(?:\s+(\S+))?\s*$"
 )
-# Per-exposure scheduler hook — nearest match within 10 min.
+# Nearest dimm.logs sample within 10 min of exposure UT (~60 s sampling).
 SEEING_JOIN_TOL = 10.0 / 60.0
 
 
@@ -104,7 +104,8 @@ def _parse_log_line(line: str) -> tuple[datetime, str] | None:
     return utc_dt, arcsec
 
 
-def load_seeing_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
+def load_dimm_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
+    """Load UTC-stamped arcsec lines from dimm.logs for one UT night."""
     if path is None or not path.is_file():
         return []
     out: list[SeeingSample] = []
@@ -118,6 +119,11 @@ def load_seeing_samples(path: Path | None, night_date: str) -> list[SeeingSample
         out.append(SeeingSample(utc_to_ut_decimal(utc_dt), arcsec))
     out.sort(key=lambda s: s.ut)
     return out
+
+
+def load_seeing_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
+    """Alias for load_dimm_samples (tests and check_night)."""
+    return load_dimm_samples(path, night_date)
 
 
 def nearest_seeing_on_night(
@@ -139,13 +145,29 @@ def nearest_seeing_on_night(
 def dimm_for_exposure(
     night_ut: float,
     anchor: float,
-    scheduler_seeing: str | None,
-    eso_samples: list[SeeingSample],
+    samples: list[SeeingSample],
 ) -> str:
-    if scheduler_seeing:
-        return scheduler_seeing
-    hit = nearest_seeing_on_night(night_ut, eso_samples, anchor)
+    """Nearest dimm.logs sample on the night timeline, or n/a if none within tolerance."""
+    hit = nearest_seeing_on_night(night_ut, samples, anchor)
     return hit.arcsec if hit else "n/a"
+
+
+def archive_and_clear_dimm_log(
+    log_path: Path,
+    night_date: str,
+    archive_path: Path | None = None,
+) -> int:
+    """Archive this night's dimm.logs lines, then truncate the live file."""
+    return _archive_and_clear_log(log_path, night_date, archive_path)
+
+
+def archive_and_clear_seeing_log(
+    log_path: Path,
+    night_date: str,
+    archive_path: Path | None = None,
+) -> int:
+    """Alias for archive_and_clear_dimm_log (legacy name)."""
+    return archive_and_clear_dimm_log(log_path, night_date, archive_path)
 
 
 def _lines_for_night(log_path: Path, night_date: str) -> list[str]:
@@ -162,17 +184,11 @@ def _lines_for_night(log_path: Path, night_date: str) -> list[str]:
     return out
 
 
-def archive_and_clear_seeing_log(
+def _archive_and_clear_log(
     log_path: Path,
     night_date: str,
     archive_path: Path | None = None,
 ) -> int:
-    """
-    After a nightly report: copy this night's samples to the night log dir, then
-    truncate the live polling file so it does not grow without bound.
-
-    Returns number of lines archived.
-    """
     lines = _lines_for_night(log_path, night_date)
     if archive_path is not None and lines:
         archive_path.parent.mkdir(parents=True, exist_ok=True)

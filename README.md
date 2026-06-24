@@ -68,29 +68,24 @@ Paths resolved by `night_paths.py` from `~/data/YYYYMMDD/`, `~/obsplans/`, and e
 
 ## DIMM / seeing
 
-The exposure table **DIMM** column uses, in order:
+The exposure table **DIMM** column uses **only** `dimm.logs` (from `ntt_dome_status` on the mountain). Each exposure gets the **nearest** sample within **10 minutes** of its UT (FITS timestamp in `log.obs`). With ~60 s sampling, that is typically within ~30 s.
 
-1. `seeing` / `DIMM` in the scheduler log line (if present), else  
-2. Nearest sample from **`dimm.logs`** (preferred on mountain) or `seeing.logs` (dev poller)
+If `dimm.logs` is missing or empty, DIMM shows **n/a**; the rest of the report still generates.
 
 ### Mountain (recommended — Kenneth)
 
-Deploy scripts in [`mountain_deploy/`](mountain_deploy/README.md):
-
-- `append_eso_dimm_log.csh` — `curl` ESO `dimm.last`, append to `$LS4_ROOT/logs/dimm.logs`
-- `ntt_dome_status` — same as production script plus a hook that calls the helper (**stdout unchanged**)
+Deploy [`mountain_deploy/ntt_dome_status`](mountain_deploy/ntt_dome_status) — production script plus inline ESO `dimm.last` fetch/append to `$LS4_ROOT/logs/dimm.logs` (**stdout unchanged**).
 
 Install as `ls4` on ls4-workstn:
 
 ```bash
-cp ~/nightly_report/mountain_deploy/append_eso_dimm_log.csh $LS4_ROOT/bin/
+diff -u $LS4_ROOT/bin/ntt_dome_status ~/nightly_report/mountain_deploy/ntt_dome_status
 cp ~/nightly_report/mountain_deploy/ntt_dome_status $LS4_ROOT/bin/
-chmod +x $LS4_ROOT/bin/append_eso_dimm_log.csh
 ```
 
-After the morning report, live `dimm.logs` is archived to `~/data/YYYYMMDD/logs/dimm.logs` and cleared.
+Samples arrive **~every 60 s** while `dome_daemon` runs (`weather` → `ntt_dome_status`). The report joins the nearest sample to each exposure.
 
-**Note:** DIMM is logged **per exposure** once the scheduler patch is applied (`mountain_deploy/scheduler_dimm.patch`). Until then, samples come only when `ntt_dome_status` runs.
+After the morning report, live `dimm.logs` is archived to `~/data/YYYYMMDD/logs/dimm.logs` and cleared.
 
 ### Northwestern dev poller (optional)
 

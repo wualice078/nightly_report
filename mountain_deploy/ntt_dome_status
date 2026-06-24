@@ -119,10 +119,22 @@ if ( $dt > $DATE_TOLERANCE ) then
    exit
 endif
 
-# ESO DIMM for nightly report — append to logs/dimm.logs only (stdout unchanged).
-if ( -f "$LS4_ROOT/bin/append_eso_dimm_log.csh" ) then
-   csh "$LS4_ROOT/bin/append_eso_dimm_log.csh" >& /dev/null
+# ESO DIMM seeing for nightly report — append to logs/dimm.logs (stdout unchanged).
+set dimm_url = "https://www.ls.eso.org/lasilla/dimm/dimm.last"
+if ($?LS4_ESO_DIMM_URL) set dimm_url = "$LS4_ESO_DIMM_URL"
+set dimm_tmp = "/tmp/eso_dimm_${$}.tmp"
+curl -sk --max-time 15 -o $dimm_tmp "$dimm_url" >& /dev/null
+if ( $status == 0 && -s $dimm_tmp ) then
+   set dimm_line = `cat $dimm_tmp`
+   set dimm_arcsec = `echo "$dimm_line" | sed -n 's/.*[Ss]eeing=\([0-9.][0-9.]*\).*/\1/p'`
+   if ( "$dimm_arcsec" == "" ) set dimm_arcsec = `echo "$dimm_line" | awk '{print $1}'`
+   set dimm_ok = `echo "$dimm_arcsec" | awk '{ if ($1 > 0 && $1 < 10) print "ok" }'`
+   if ( "$dimm_ok" == "ok" ) then
+      set dimm_stamp = `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+      echo "$dimm_stamp $dimm_arcsec" >>! "$LS4_ROOT/logs/dimm.logs"
+   endif
 endif
+rm -f $dimm_tmp
 
 if ( $ntt_status == "OPEN" && $twoptwo_status == "OPEN" ) then
   echo "$date $weather_state $OPEN"
