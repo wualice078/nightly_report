@@ -1,0 +1,78 @@
+LS4 NIGHTLY REPORT - 20260529
+Generated: 2026-06-24T14:00:00
+Data source: live
+
+=== Night summary ===
+  Observing fields: 157 planned, 45 complete, 34 partial, 78 not observed
+    (79 with at least one exposure)
+  Calibration fields: 67 planned, 51 complete, 0 partial, 16 not observed
+    (51 with at least one exposure)
+  Exposures in log: 250
+  Dome first open:  22.305 h (22:18:19 UT)
+  Dome last close:  10.125 h (10:07:30 UT) (manual end-of-night (questctl CLOSE_CODE / closedome))
+  Dome total open:  11.820 h (709.2 min)
+
+=== Field inventory (obsplan vs log.obs) ===
+  obsplan: /home/observer/obsplans/20260529/20260529.obsplan
+  log.obs: /home/observer/data/20260529/logs/log.obs
+  planned: 224  exposures in log: 250
+  RA in hours, Dec in degrees
+
+  Observing fields (157 planned)
+  tag                         RA        Dec  got/need
+  COMPLETE (45)
+  RA18.50_D35            18.5000   -35.0000  2/1
+  ...
+  PARTIAL (34)
+  ...
+  NOT OBSERVED (78)
+  ...
+
+  Calibration fields (67 planned)
+  ...
+
+=== Exposures ===
+  log.obs: /home/observer/data/20260529/logs/log.obs
+  RA in hours, Dec in degrees
+  dimm.logs: /home/observer/logs/dimm.logs (142 samples for night)
+
+  Observing (199)
+   UT(h)  tag                        RA      Dec  Temp  RH%  Wind   Dir  DIMM  file
+  22.832  sky 43 54_24_dither     10.21   -31.55  13.3  20.0   8.9  31.0  0.662  20260528224956
+  23.014  sky 49 62_28_dither     10.72   -22.19  13.3  20.0   8.1  40.0  0.641  20260528230050
+   0.033  sky 83 66_26_dither     11.81   -26.87  13.4  19.0   7.9  37.0  0.598  20260529000157
+   ...
+  10.493  sky 246 88_28           18.98   -24.55  13.7   9.0  12.3  46.0  0.721  20260529102934
+
+  Calibration (51)
+   UT(h)  tag                        RA      Dec  Temp  RH%  Wind   Dir  DIMM  file
+  22.330  pmskyflat 0 evenin..    11.00   -20.00  13.3  21.0   7.2  38.0  0.655  20260528221947
+   ...
+
+=== Dome ===
+  UT in hours
+  questctl logs: /home/observer/logs/questctl.*.log  (primary close time)
+  scheduler log: /home/observer/data/20260529/logs/20260529.log
+  dome_daemon log: /home/observer/logs/dome_daemon.log  (weather/safety fallback)
+   #      UT(h)  event
+  01   22.30528  OPEN
+  02   10.13889  CLOSED
+  03   10.36667  OPEN
+  ** close time (from questctl): UT 10.12528 h
+     manual end-of-night (questctl CLOSE_CODE / closedome)
+     2026-05-30 10:07:31 UTC
+  intervals (open):
+    01   22.30528 -  10.12528  (11.820 h)
+  total open: 11.820 h (709.2 min)
+
+=== Weather (30 min UT) ===
+  UT in hours
+  window: 22.305 - 10.818 h
+  source: /home/observer/data/20260529/logs/20260529.log
+    UT(h)  Temp   RH%  Wind   Dir
+   22.500  13.3  20.0  10.1  32.0
+   23.000  13.3  20.0   8.1  40.0
+   23.500  13.2  20.0   7.8  43.0
+    0.000  13.4  20.0   6.8  31.0
+    ...
+   10.500  14.0   9.0  11.5  48.0

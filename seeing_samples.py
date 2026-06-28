@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
-"""ESO DIMM samples from $LS4_ROOT/logs/dimm.logs (ntt_dome_status)."""
+"""ESO DIMM samples from ~/logs/dimm.logs (written by ntt_dome_status on the mountain)."""
 
 from __future__ import annotations
 
 import re
-import ssl
-import subprocess
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from dome_daemon import belongs_to_ut_night, utc_to_ut_decimal
-from practice_config import ESO_SEEING_URL, SEEING_LOG
 from weather_samples import to_night_ut
 
-SEEING_LOG_LINE = re.compile(
+DIMM_LOG_LINE = re.compile(
     r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\s+([\d.]+)(?:\s+(\S+))?\s*$"
 )
 # Nearest dimm.logs sample within 10 min of exposure UT (~60 s sampling).
@@ -29,71 +24,12 @@ class SeeingSample:
     arcsec: str
 
 
-def _fetch_seeing_text(url: str, timeout: float) -> str | None:
-    req = urllib.request.Request(url, headers={"User-Agent": "ls4-nightly-report/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode("utf-8", errors="replace").strip()
-    except urllib.error.URLError as exc:
-        if "CERTIFICATE" not in str(exc):
-            return None
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-                return resp.read().decode("utf-8", errors="replace").strip()
-        except (OSError, urllib.error.URLError):
-            pass
-    except OSError:
-        pass
-    try:
-        r = subprocess.run(
-            ["curl", "-sk", "--max-time", str(int(timeout)), url],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return None
-    if r.returncode != 0:
-        return None
-    return (r.stdout or "").strip() or None
-
-
-def fetch_eso_seeing_arcsec(url: str = ESO_SEEING_URL, timeout: float = 15.0) -> float | None:
-    """Read current DIMM seeing (arcsec) from ESO seeing.last."""
-    text = _fetch_seeing_text(url, timeout)
-    if not text:
-        return None
-    try:
-        val = float(text.split()[0])
-    except ValueError:
-        return None
-    if val <= 0.0 or val > 10.0:
-        return None
-    return val
-
-
 def format_arcsec(val: float) -> str:
     return f"{val:.3f}"
 
 
-def append_seeing_sample(log_path: Path = SEEING_LOG, url: str = ESO_SEEING_URL) -> bool:
-    """Fetch ESO seeing and append one UTC-stamped line. Returns True on success."""
-    val = fetch_eso_seeing_arcsec(url)
-    if val is None:
-        return False
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    line = f"{stamp} {format_arcsec(val)}\n"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as fh:
-        fh.write(line)
-    return True
-
-
 def _parse_log_line(line: str) -> tuple[datetime, str] | None:
-    m = SEEING_LOG_LINE.match(line.strip())
+    m = DIMM_LOG_LINE.match(line.strip())
     if not m:
         return None
     try:
@@ -122,7 +58,7 @@ def load_dimm_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
 
 
 def load_seeing_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
-    """Alias for load_dimm_samples (tests and check_night)."""
+    """Alias for load_dimm_samples."""
     return load_dimm_samples(path, night_date)
 
 
@@ -132,7 +68,7 @@ def nearest_seeing_on_night(
     anchor: float,
     max_delta: float = SEEING_JOIN_TOL,
 ) -> SeeingSample | None:
-    """Nearest ESO seeing sample on the continuous night timeline."""
+    """Nearest DIMM sample on the continuous night timeline."""
     best: SeeingSample | None = None
     best_d = max_delta + 1.0
     for s in samples:
@@ -166,7 +102,7 @@ def archive_and_clear_seeing_log(
     night_date: str,
     archive_path: Path | None = None,
 ) -> int:
-    """Alias for archive_and_clear_dimm_log (legacy name)."""
+    """Alias for archive_and_clear_dimm_log."""
     return archive_and_clear_dimm_log(log_path, night_date, archive_path)
 
 

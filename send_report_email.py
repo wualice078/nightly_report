@@ -2,12 +2,12 @@
 """
 Build and email the LS4 nightly report.
 
-NUC (mountain):
-  /home/ls4/ls4_venv/bin/python3 \\
-    /home/ls4/nightly_report/send_report_email.py --no-practice-fallback --build-only
-
-Practice / test:
+Mountain:
+  python3 send_report_email.py --build-only
   python3 send_report_email.py --date YYYYMMDD --build-only
+
+Practice:
+  python3 send_report_email.py --date YYYYMMDD --build-only --practice-fallback
 """
 
 from __future__ import annotations
@@ -93,12 +93,12 @@ def main() -> int:
     ap.add_argument(
         "--cleanup-seeing",
         action="store_true",
-        help="Archive tonight's seeing.logs to the night data dir and truncate the live file",
+        help="Archive dimm.logs to the night data dir and truncate the live file",
     )
     ap.add_argument(
         "--no-cleanup-seeing",
         action="store_true",
-        help="Keep seeing.logs after report (default for manual --date runs)",
+        help="Do not archive/truncate dimm.logs after build",
     )
     args = ap.parse_args()
 

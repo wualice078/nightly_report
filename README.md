@@ -1,145 +1,60 @@
 # LS4 nightly report
 
-Python package that builds the Schmidt **LS4 nightly report** from obsplan,
-`log.obs`, scheduler logs, questctl / dome_daemon logs, and ESO DIMM seeing samples.
+Builds a text **nightly report** for Schmidt LS4 from obsplan, `log.obs`, scheduler logs, questctl / dome_daemon logs, and ESO DIMM samples.
 
-Production copy on the mountain: `observer@ls4-workstn:~/nightly_report`  
-GitHub: https://github.com/wualice078/nightly_report
+**Production:** `observer@ls4-workstn:~/nightly_report`  
+**GitHub:** https://github.com/wualice078/nightly_report
 
-**Shell on the mountain is tcsh** — use `setenv` / `` set VAR = `cmd` `` (not bash `export` / `$()`).
+The mountain shell is **tcsh** (`setenv`, `` set VAR = `cmd` ``).
 
 ---
 
-## Quick start
+## Report contents
 
-### Mountain (production)
+Each `report_YYYYMMDD.txt` has five sections:
+
+| Section | What it shows |
+|---------|----------------|
+| **Night summary** | Field completion counts (observing + calibration), exposure count, dome first open / last close / total open time |
+| **Field inventory** | Every obsplan field vs `log.obs`: COMPLETE / PARTIAL / NOT OBSERVED |
+| **Exposures** | One row per exposure: UT, field tag, RA/Dec, Temp/RH/wind from scheduler log, **DIMM** arcsec, FITS stem |
+| **Dome** | Open/close events from scheduler log; resolved close time; open intervals and total open hours |
+| **Weather** | 30-minute UT grid of Temp, RH%, wind speed, wind direction from scheduler log |
+
+**DIMM column:** nearest sample from `~/logs/dimm.logs` within 10 minutes of each exposure UT. Shows `n/a` if the log is missing or empty.
+
+**Dome close time** (first match wins):
+
+1. `~/logs/questctl.*.log` → `CLOSE_CODE` (manual `closedome`, exact UTC)
+2. Scheduler log → `dome  : closed`
+3. `~/logs/dome_daemon.log` → `schmidt dome now closed` (weather/safety)
+
+See [examples/report_example.txt](examples/report_example.txt) for layout (abbreviated).
+
+---
+
+## Deploy
+
+### 1. Nightly report (dome close + report build)
+
+On **observer@ls4-workstn**:
 
 ```tcsh
 cd ~/nightly_report
 git pull
-
-# Night that just ended (before 8 AM local → get_ut_date is correct)
-python3 send_report_email.py --build-only
-
-# Specific UT night
-python3 send_report_email.py --date YYYYMMDD --build-only
-
-# Diagnostics for one night
-set NIGHT = 20260624
-python3 check_night.py $NIGHT
 ```
 
-Morning cron (**observer** account, **7 AM local**):
+Morning cron (already installed):
 
 ```
 0 7 * * * /home/observer/nightly_report/send_morning_report.sh
 ```
 
-Output: `~/nightly_report/reports/report_YYYYMMDD.txt` (and email if `mail` is available).
+`send_morning_report.sh` sets mountain paths and runs `send_morning_report.py` → `send_report_email.py`.
 
-### Northwestern (practice / dev)
+### 2. DIMM ingest (separate step)
 
-```bash
-python3 send_report_email.py --date 20260530 --build-only --practice-fallback
-python3 test_practice_nights.py
-python3 test_seeing_samples.py
-python3 test_dome_daemon.py
-python3 test_questctl_log.py
-```
-
-Optional dev poller (Northwestern only):
-
-```
-*/15 * * * * /home/observer/nightly_report/poll_seeing_cron.sh
-```
-
----
-
-## Mountain paths (`observer@ls4-workstn`)
-
-| What | Path |
-|------|------|
-| Night data | `~/data/YYYYMMDD/logs/log.obs`, `…/YYYYMMDD.log` |
-| Obsplans | `~/obsplans/YYYYMMDD/YYYYMMDD.obsplan` |
-| **Dome close (primary)** | `~/logs/questctl.*.log` → `CLOSE_CODE` line |
-| Dome close (weather/safety) | `~/logs/dome_daemon.log` |
-| **DIMM (after deploy)** | `~/logs/dimm.logs` |
-| Report package | `~/nightly_report` |
-
-`LS4_ROOT` on the mountain is `/home/observer` (not the `quest-src-lasilla` subdirectory).
-`start_questctl` runs from `cd $LS4_ROOT/logs`, so questctl and dome_daemon logs land in `~/logs/`.
-
----
-
-## What populates the report (two separate deploys)
-
-| Feature | Requires | When it works |
-|---------|----------|----------------|
-| **Dome close time** | `git pull` in `~/nightly_report` only | Next report for nights where observer ran `closedome` (questctl logs `CLOSE_CODE`) |
-| **DIMM column** | Deploy [`mountain_deploy/ntt_dome_status`](mountain_deploy/ntt_dome_status) to `$LS4_ROOT/bin/` | After `ntt_dome_status` runs (~60 s cadence); until then column is `n/a` |
-
-`git pull` on this repo does **not** install the DIMM hook — that is a manual copy into quest-src-lasilla.
-
----
-
-## Report sections
-
-| Section | Source |
-|---------|--------|
-| Night summary | obsplan + log.obs + dome close resolution |
-| Fields | obsplan vs log.obs completion |
-| Exposures | log.obs + scheduler weather + **DIMM** (nearest `dimm.logs` sample) |
-| Dome | See [Dome close](#dome-close) below |
-| Weather | scheduler log, 30-min UT grid |
-
-Paths resolved by `night_paths.py` from `~/data/`, `~/obsplans/`, and env overrides.
-
----
-
-## Dome close
-
-### Priority (first match wins)
-
-1. **questctl** — `signal code has been set to CLOSE_CODE <unix_epoch>` in `~/logs/questctl.*.log`  
-   Normal end-of-night: observer runs **`closedome`** → signal to questctl → exact UTC timestamp.
-
-2. **Scheduler** — `dome  : closed` on `print_telescope_status` lines in `~/data/YYYYMMDD/logs/YYYYMMDD.log`  
-   Often **missing** (scheduler stops before the next TCS poll after close).
-
-3. **dome_daemon** — `schmidt dome now closed` in `~/logs/dome_daemon.log`  
-   Uncommon: weather/safety guard (La Silla domes closed, sun up). Report notes manual vs weather when possible.
-
-### Verify on the mountain (tcsh)
-
-```tcsh
-set NIGHT = 20260624
-
-grep -c 'dome  : closed' $HOME/data/$NIGHT/logs/$NIGHT.log
-grep 'CLOSE_CODE' $LS4_ROOT/logs/questctl.*.log | tail -3
-grep -i 'now closed' $LS4_ROOT/logs/dome_daemon.log | tail -3
-
-cd ~/nightly_report
-python3 check_night.py $NIGHT
-```
-
-### Why close was missing before
-
-The old report only used scheduler `dome  : closed`, which usually never appears. Manual close is logged in **questctl**, which was not read until the questctl fallback was added.
-
----
-
-## DIMM
-
-The exposure **DIMM** column reads **only** `~/logs/dimm.logs` (live) or `~/data/YYYYMMDD/logs/dimm.logs` (archived after morning report).
-
-- Each exposure time comes from the FITS timestamp in `log.obs`.
-- The report picks the **nearest** `dimm.logs` sample within **10 minutes** UT.
-- With ~60 s ingest cadence, offsets are typically under ~30 s.
-- If `dimm.logs` is missing or empty, DIMM is **`n/a`** and the rest of the report still builds.
-
-### Ingest (separate from this package)
-
-Append samples inside `ntt_dome_status` when it runs — see [`mountain_deploy/`](mountain_deploy/).
+Copy the staged script into quest-src-lasilla (requires write access, often as `ls4`):
 
 ```tcsh
 diff -u $LS4_ROOT/bin/ntt_dome_status ~/nightly_report/mountain_deploy/ntt_dome_status
@@ -147,78 +62,168 @@ cp ~/nightly_report/mountain_deploy/ntt_dome_status $LS4_ROOT/bin/
 chmod +x $LS4_ROOT/bin/ntt_dome_status
 ```
 
-Requires write access to quest-src-lasilla (often as `ls4` after approval).
+This appends one line to `~/logs/dimm.logs` each time `ntt_dome_status` runs (~60 s). **Stdout is unchanged** (weather server still gets the same OPEN/CLOSED line).
 
-**Log format:** `2026-06-24T15:00:00Z 0.662`
-
-After a successful morning report, live `dimm.logs` is copied to the night’s `logs/` directory and truncated.
-
-### Northwestern dev poller (optional)
-
-`poll_seeing_log.py` / `poll_seeing_cron.sh` append to `~/logs/seeing.logs` for pipeline testing. **Not** used on the mountain and **not** a substitute for `dimm.logs`.
+Log format: `2026-06-24T15:00:00Z 0.662`
 
 ---
 
-## Layout
+## Mountain paths
+
+| Data | Path |
+|------|------|
+| Night data | `~/data/YYYYMMDD/logs/log.obs`, `…/YYYYMMDD.log` |
+| Obsplan | `~/obsplans/YYYYMMDD/YYYYMMDD.obsplan` |
+| Dome close (primary) | `~/logs/questctl.*.log` |
+| Dome close (fallback) | `~/logs/dome_daemon.log` |
+| DIMM samples | `~/logs/dimm.logs` |
+| Report output | `~/nightly_report/reports/report_YYYYMMDD.txt` |
+
+`LS4_ROOT=/home/observer` on the mountain.
+
+---
+
+## Commands
+
+All commands below assume `cd ~/nightly_report` (mountain) or the repo root (Northwestern).
+
+### Build a report
+
+```tcsh
+# Default night (uses get_ut_date — before 8 AM local = night that just ended)
+python3 send_report_email.py --build-only
+
+# Specific UT night
+python3 send_report_email.py --date YYYYMMDD --build-only
+
+# Build and email
+python3 send_report_email.py --date YYYYMMDD --to you@example.edu
+
+# Northwestern: use practice archive when live data missing
+python3 send_report_email.py --date 20260530 --build-only --practice-fallback
+```
+
+### Morning cron (manual run)
+
+```tcsh
+~/nightly_report/send_morning_report.sh
+```
+
+Log: `~/nightly_report/reports/cron_morning.log`
+
+### Diagnostics
+
+```tcsh
+set NIGHT = 20260624
+python3 check_night.py $NIGHT
+```
+
+Shows which input files exist, scheduler `dome:closed` count, questctl `CLOSE_CODE` count, dome_daemon closes, and dimm.logs sample count.
+
+### Batch build (Northwestern / testing)
+
+```bash
+python3 build_all_reports.py --practice-fallback
+python3 build_all_reports.py --date 20260529 --date 20260530 --build-only
+```
+
+### Tests
+
+```bash
+python3 test_practice_nights.py
+python3 test_practice_nights.py --date 20260530
+python3 test_dome_daemon.py
+python3 test_questctl_log.py
+python3 test_seeing_samples.py
+```
+
+### Verify dome close on the mountain
+
+```tcsh
+grep 'CLOSE_CODE' $LS4_ROOT/logs/questctl.*.log | tail -3
+grep -c 'dome  : closed' $HOME/data/YYYYMMDD/logs/YYYYMMDD.log
+```
+
+### Verify DIMM after ntt_dome_status deploy
+
+```tcsh
+tail -5 $LS4_ROOT/logs/dimm.logs
+```
+
+---
+
+## How it works
 
 ```
-nightly_report/
-  README.md
-  practice_config.py        paths, email, env defaults
-  night_paths.py            resolve obsplan / logs for one UT night
-  send_report_email.py      build (+ optional email)
-  send_morning_report.sh    cron wrapper (7 AM); sets mountain env vars
-  build_*.py                report sections
-  seeing_samples.py         load dimm.logs, nearest match per exposure
-  questctl_log.py           parse questctl CLOSE_CODE close times
-  dome_daemon.py            parse dome_daemon.log (weather/safety fallback)
-  check_night.py            one-night diagnostics
-  mountain_deploy/          staged ntt_dome_status DIMM hook
-  poll_seeing_*.py/sh       optional Northwestern ESO poller
-  test_*.py
-  reports/                  generated report_YYYYMMDD.txt (gitignored)
+obsplan + log.obs + scheduler log + questctl/dome_daemon/dimm logs
+        │
+        ▼
+  night_paths.py          resolve paths for one UT night
+        │
+        ▼
+  send_report_email.py    assemble sections → report_YYYYMMDD.txt
+        │
+        ├── build_summary.py       field counts + dome times
+        ├── compare_obsplan_log.py field inventory
+        ├── build_exposure_report.py  exposures + weather + DIMM join
+        ├── build_dome_report.py   dome timeline + close resolution
+        └── build_weather_report.py  30-min weather grid
 ```
+
+After a successful **morning** live report, `dimm.logs` is archived to `~/data/YYYYMMDD/logs/dimm.logs` and the live file is truncated.
+
+---
+
+## Repository layout
+
+| File | Role |
+|------|------|
+| `send_report_email.py` | Main entry: build report, optional email, optional dimm.logs cleanup |
+| `send_morning_report.py` | Cron entry point |
+| `send_morning_report.sh` | Cron wrapper; exports mountain env vars |
+| `night_paths.py` | Find obsplan, log.obs, scheduler log, dimm.logs for one night |
+| `practice_config.py` | Paths, email recipient, env defaults |
+| `compare_obsplan_log.py` | Parse obsplan / log.obs; field completion |
+| `build_summary.py` | Night summary section |
+| `build_exposure_report.py` | Exposure table with weather + DIMM |
+| `build_dome_report.py` | Dome section; questctl → scheduler → dome_daemon |
+| `build_weather_report.py` | 30-min weather grid |
+| `weather_samples.py` | Parse scheduler weather + dome status lines |
+| `questctl_log.py` | Parse questctl `CLOSE_CODE` timestamps |
+| `dome_daemon.py` | Parse dome_daemon.log closes |
+| `seeing_samples.py` | Load dimm.logs; nearest match per exposure |
+| `check_night.py` | One-night diagnostics |
+| `build_all_reports.py` | Batch-build many nights |
+| `mountain_deploy/ntt_dome_status` | Staged DIMM hook for quest-src-lasilla |
+| `examples/report_example.txt` | Sample report layout |
+| `test_*.py` | Unit and practice-night tests |
 
 ---
 
 ## Environment variables
 
-Set automatically by `send_morning_report.sh` on the mountain. Override only if your layout differs.
+Set by `send_morning_report.sh` on the mountain unless overridden.
 
-| Variable | Mountain default | Purpose |
-|----------|------------------|---------|
+| Variable | Default (mountain) | Purpose |
+|----------|-------------------|---------|
 | `LS4_OBSERVER_ROOT` | `/home/observer` | Observer home |
-| `LS4_ROOT` | `/home/observer` | Quest runtime root; logs under `$LS4_ROOT/logs/` |
-| `LS4_DATA_ROOT` | `/home/observer/data:/home/ls4/data` | Night data trees (`YYYYMMDD/logs/`) |
+| `LS4_ROOT` | `/home/observer` | Quest runtime; logs under `$LS4_ROOT/logs/` |
+| `LS4_DATA_ROOT` | `/home/observer/data:…` | Night data directories |
 | `LS4_OBSPLAN_ROOT` | `/home/observer/obsplans:…` | Obsplan directories |
-| `LS4_QUESTCTL_LOG_DIR` | `$LS4_ROOT/logs` | `questctl.*.log` (primary dome close) |
-| `LS4_DOME_DAEMON_LOG` | `$LS4_ROOT/logs/dome_daemon.log` | Weather/safety dome close |
-| `LS4_DIMM_LOG` | `$LS4_ROOT/logs/dimm.logs` | ESO DIMM append log |
-| `LS4_ESO_DIMM_URL` | ESO `dimm.last` HTTPS URL | Used by `ntt_dome_status` hook |
-| `LS4_SEEING_LOG` | `~/logs/seeing.logs` | Northwestern dev poller only |
-| `LS4_LIVE_ONLY` | `1` | Skip practice fallback on mountain |
-| `LS4_PYTHON` | auto | Python for cron scripts |
+| `LS4_QUESTCTL_LOG_DIR` | `$LS4_ROOT/logs` | questctl.*.log |
+| `LS4_DOME_DAEMON_LOG` | `$LS4_ROOT/logs/dome_daemon.log` | dome_daemon fallback |
+| `LS4_DIMM_LOG` | `$LS4_ROOT/logs/dimm.logs` | Live DIMM samples |
+| `LS4_LIVE_ONLY` | `1` | Skip practice fallback |
+| `LS4_PYTHON` | auto | Python for cron |
 
 ---
 
-## Tests
+## Cron timing
 
-```bash
-python3 test_seeing_samples.py
-python3 test_dome_daemon.py
-python3 test_questctl_log.py
-python3 test_practice_nights.py
-python3 test_practice_nights.py --date 20260530
-```
+Morning cron at **7 AM local** uses `get_ut_date`:
 
----
-
-## `get_ut_date` and cron timing
-
-Morning cron at **7 AM local** uses `bin/get_ut_date`:
-
-- Before **8 AM local** → night label is the **night that just ended**.
-- After **8 AM local** → default switches to the **next** night; use `--date YYYYMMDD` for a finished night.
+- Before **8 AM local** → night label is the **night that just ended**
+- After **8 AM local** → default switches to the **next** night; use `--date YYYYMMDD` for a finished night
 
 ---
 
@@ -226,8 +231,8 @@ Morning cron at **7 AM local** uses `bin/get_ut_date`:
 
 | Symptom | Check |
 |---------|--------|
-| No dome close | `grep CLOSE_CODE ~/logs/questctl.*.log` — need `closedome` with questctl running |
-| DIMM all `n/a` | `ls ~/logs/dimm.logs` — deploy `mountain_deploy/ntt_dome_status` |
-| Wrong night / missing data | `get_ut_date`; `ls ~/data/YYYYMMDD/logs/log.obs` |
-| Permission errors | Run as **observer**, not `ls4` |
-| tcsh errors | Use `setenv LS4_ROOT /home/observer`, not `export` |
+| No dome close | `grep CLOSE_CODE ~/logs/questctl.*.log` |
+| DIMM all `n/a` | `ls ~/logs/dimm.logs`; deploy `mountain_deploy/ntt_dome_status` |
+| Missing night data | `ls ~/data/YYYYMMDD/logs/log.obs` |
+| Wrong user | Run as **observer**, not `ls4` |
+| tcsh syntax errors | Use `setenv` / `` set N = `get_ut_date` ``, not bash `export` |
