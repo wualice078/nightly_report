@@ -35,8 +35,6 @@ See [examples/report_example.txt](examples/report_example.txt) for layout (abbre
 
 ## Deploy
 
-### 1. Nightly report (dome close + report build)
-
 On **observer@ls4-workstn**:
 
 ```tcsh
@@ -44,27 +42,15 @@ cd ~/nightly_report
 git pull
 ```
 
-Morning cron (already installed):
+Morning cron:
 
 ```
 0 7 * * * /home/observer/nightly_report/send_morning_report.sh
 ```
 
-`send_morning_report.sh` sets mountain paths and runs `send_morning_report.py` → `send_report_email.py`.
+### DIMM column (optional)
 
-### 2. DIMM ingest (separate step)
-
-Copy the staged script into quest-src-lasilla (requires write access, often as `ls4`):
-
-```tcsh
-diff -u $LS4_ROOT/bin/ntt_dome_status ~/nightly_report/mountain_deploy/ntt_dome_status
-cp ~/nightly_report/mountain_deploy/ntt_dome_status $LS4_ROOT/bin/
-chmod +x $LS4_ROOT/bin/ntt_dome_status
-```
-
-This appends one line to `~/logs/dimm.logs` each time `ntt_dome_status` runs (~60 s). **Stdout is unchanged** (weather server still gets the same OPEN/CLOSED line).
-
-Log format: `2026-06-24T15:00:00Z 0.662`
+The report reads `~/logs/dimm.logs`. To fill it, add the DIMM block from [`mountain_deploy/ntt_dome_status`](mountain_deploy/ntt_dome_status) into `$LS4_ROOT/bin/ntt_dome_status` — after the date-tolerance check, before the final `echo … OPEN|CLOSED` line. Stdout to the weather server stays the same; the script appends lines like `2026-06-24T15:00:00Z 0.662` to `~/logs/dimm.logs` when it runs (~60 s). You do not need to create that file by hand.
 
 ---
 
@@ -90,10 +76,10 @@ All commands below assume `cd ~/nightly_report` (mountain) or the repo root (Nor
 ### Build a report
 
 ```tcsh
-# Default night (uses get_ut_date — before 8 AM local = night that just ended)
+# Default night (get_ut_date)
 python3 send_report_email.py --build-only
 
-# Specific UT night
+# Specific UT night (use this after ~8 AM local if get_ut_date already flipped)
 python3 send_report_email.py --date YYYYMMDD --build-only
 
 # Build and email
@@ -144,7 +130,7 @@ grep 'CLOSE_CODE' $LS4_ROOT/logs/questctl.*.log | tail -3
 grep -c 'dome  : closed' $HOME/data/YYYYMMDD/logs/YYYYMMDD.log
 ```
 
-### Verify DIMM after ntt_dome_status deploy
+### Verify DIMM
 
 ```tcsh
 tail -5 $LS4_ROOT/logs/dimm.logs
@@ -194,7 +180,7 @@ After a successful **morning** live report, `dimm.logs` is archived to `~/data/Y
 | `seeing_samples.py` | Load dimm.logs; nearest match per exposure |
 | `check_night.py` | One-night diagnostics |
 | `build_all_reports.py` | Batch-build many nights |
-| `mountain_deploy/ntt_dome_status` | Staged DIMM hook for quest-src-lasilla |
+| `mountain_deploy/ntt_dome_status` | Reference snippet to paste into `$LS4_ROOT/bin/ntt_dome_status` for DIMM |
 | `examples/report_example.txt` | Sample report layout |
 | `test_*.py` | Unit and practice-night tests |
 
@@ -218,12 +204,9 @@ Set by `send_morning_report.sh` on the mountain unless overridden.
 
 ---
 
-## Cron timing
+## Night date default
 
-Morning cron at **7 AM local** uses `get_ut_date`:
-
-- Before **8 AM local** → night label is the **night that just ended**
-- After **8 AM local** → default switches to the **next** night; use `--date YYYYMMDD` for a finished night
+`send_report_email.py` with no `--date` calls `get_ut_date` (same as the rest of LS4). Morning cron at 7 AM runs before that label flips (~8 AM local). To rebuild a specific finished night anytime: `--date YYYYMMDD`.
 
 ---
 
@@ -232,7 +215,7 @@ Morning cron at **7 AM local** uses `get_ut_date`:
 | Symptom | Check |
 |---------|--------|
 | No dome close | `grep CLOSE_CODE ~/logs/questctl.*.log` |
-| DIMM all `n/a` | `ls ~/logs/dimm.logs`; deploy `mountain_deploy/ntt_dome_status` |
+| DIMM all `n/a` | `tail ~/logs/dimm.logs` — add DIMM block to `ntt_dome_status` (see Deploy) |
 | Missing night data | `ls ~/data/YYYYMMDD/logs/log.obs` |
 | Wrong user | Run as **observer**, not `ls4` |
 | tcsh syntax errors | Use `setenv` / `` set N = `get_ut_date` ``, not bash `export` |

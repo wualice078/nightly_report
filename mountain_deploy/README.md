@@ -1,3 +1,5 @@
-# ntt_dome_status DIMM hook
+# DIMM snippet for ntt_dome_status
 
-Copy to `$LS4_ROOT/bin/ntt_dome_status` on the mountain. Full install steps are in the main [README](../README.md#deploy-dimm-ingest).
+Paste the block marked in this file into `$LS4_ROOT/bin/ntt_dome_status` on the mountain (after the date-tolerance check, before the final OPEN/CLOSED `echo`).
+
+See the main [README](../README.md#dimm-column-optional).
