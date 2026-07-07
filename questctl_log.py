@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dome_daemon import belongs_to_ut_night, utc_to_ut_decimal
@@ -14,36 +14,40 @@ CLOSE_CODE = re.compile(r"signal code has been set to CLOSE_CODE\s+(\d+)")
 
 
 def questctl_logs_for_night(log_dir: Path | None, night_date: str) -> list[Path]:
-    """questctl.YYYYMMDDHHMMSS.log files that may cover this UT night."""
+    """
+    questctl.YYYYMMDDHHMMSS.log files to scan for this UT night.
+
+    questctl often runs for weeks in one log (filename = start time only), so we
+    scan every questctl.*.log and filter CLOSE_CODE by timestamp, not filename.
+    """
+    _ = night_date  # filtering is by CLOSE_CODE epoch in load_questctl_closes
     if log_dir is None or not log_dir.is_dir():
         return []
-    d0 = datetime.strptime(night_date, "%Y%m%d")
-    prev = (d0 - timedelta(days=1)).strftime("%Y%m%d")
-    allowed = {night_date, prev}
     out: list[Path] = []
     for path in sorted(log_dir.glob("questctl.*.log")):
         parts = path.name.split(".")
-        if len(parts) < 2 or len(parts[1]) < 8:
+        if len(parts) < 2:
             continue
-        if parts[1][:8] in allowed:
-            out.append(path)
+        out.append(path)
     return out
 
 
 def load_questctl_closes(log_dir: Path | None, night_date: str) -> list[datetime]:
-    """UTC datetimes from questctl CLOSE_CODE lines for logs tied to night_date."""
+    """UTC datetimes from questctl CLOSE_CODE lines on this UT night."""
     out: list[datetime] = []
     for path in questctl_logs_for_night(log_dir, night_date):
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             m = CLOSE_CODE.search(line)
             if not m:
                 continue
-            out.append(datetime.fromtimestamp(int(m.group(1)), tz=timezone.utc))
+            utc_dt = datetime.fromtimestamp(int(m.group(1)), tz=timezone.utc)
+            if belongs_to_ut_night(utc_dt, night_date):
+                out.append(utc_dt)
     return out
 
 
 def count_questctl_closes_on_night(log_dir: Path | None, night_date: str) -> int:
-    return sum(1 for c in load_questctl_closes(log_dir, night_date) if belongs_to_ut_night(c, night_date))
+    return len(load_questctl_closes(log_dir, night_date))
 
 
 def find_night_close_from_questctl(
@@ -68,8 +72,6 @@ def find_night_close_from_questctl(
 
     candidates: list[tuple[float, float, datetime]] = []
     for utc_dt in closes:
-        if not belongs_to_ut_night(utc_dt, night_date):
-            continue
         ut = utc_to_ut_decimal(utc_dt)
         night_ut = to_night_ut(ut, anchor)
         if night_ut + 1e-6 < open_night:

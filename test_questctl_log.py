@@ -21,7 +21,14 @@ from questctl_log import (
 
 def test_questctl_logs_for_june_night() -> None:
     logs = questctl_logs_for_night(PRACTICE_QUESTCTL_LOG_DIR, "20260601")
+    assert len(logs) >= 1
+
+
+def test_long_running_log_filename() -> None:
+    """CLOSE for UT night 20260601 lives in questctl.20260601181324.log."""
+    logs = questctl_logs_for_night(PRACTICE_QUESTCTL_LOG_DIR, "20260602")
     assert any("20260601" in p.name for p in logs)
+    assert count_questctl_closes_on_night(PRACTICE_QUESTCTL_LOG_DIR, "20260601") >= 1
 
 
 def test_load_close_code_epochs() -> None:
@@ -64,6 +71,7 @@ def test_dome_summary_accepts_questctl_dir() -> None:
 def main() -> int:
     tests = [
         test_questctl_logs_for_june_night,
+        test_long_running_log_filename,
         test_load_close_code_epochs,
         test_find_close_after_open,
         test_dome_summary_accepts_questctl_dir,

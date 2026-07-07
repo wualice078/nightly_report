@@ -54,7 +54,7 @@ def main() -> int:
         logs = questctl_logs_for_night(qdir, date)
         closes = load_questctl_closes(qdir, date)
         n = count_questctl_closes_on_night(qdir, date)
-        print(f"  log files for night: {len(logs)}")
+        print(f"  questctl.*.log in dir: {len(logs)}")
         print(f"  CLOSE_CODE signals for UT night {date}: {n}")
         if closes:
             print(f"  last CLOSE_CODE UTC: {closes[-1].isoformat()}")

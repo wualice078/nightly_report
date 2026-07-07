@@ -214,7 +214,7 @@ Set by `send_morning_report.sh` on the mountain unless overridden.
 
 | Symptom | Check |
 |---------|--------|
-| No dome close | `grep CLOSE_CODE ~/logs/questctl.*.log` |
+| No dome close | `python3 check_night.py YYYYMMDD` — look for `CLOSE_CODE signals for UT night …: N` (not bare `grep \| tail`, which mixes nights). Questctl scans **all** `~/logs/questctl.*.log` files (long-running logs keep the start date in the filename). |
 | DIMM all `n/a` | `tail ~/logs/dimm.logs` — add DIMM block to `ntt_dome_status` (see Deploy) |
 | Missing night data | `ls ~/data/YYYYMMDD/logs/log.obs` |
 | Wrong user | Run as **observer**, not `ls4` |
