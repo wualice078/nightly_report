@@ -52,10 +52,16 @@ def main() -> int:
     print(f"\nquestctl: {qdir}")
     if qdir.is_dir():
         logs = questctl_logs_for_night(qdir, date)
+        print(f"  questctl.*.log in dir: {len(logs)}", flush=True)
+        for p in logs:
+            try:
+                mb = p.stat().st_size / (1024 * 1024)
+                if mb >= 1:
+                    print(f"  scanning {p.name} ({mb:.0f} MB) ...", flush=True)
+            except OSError:
+                pass
         closes = load_questctl_closes(qdir, date)
-        n = count_questctl_closes_on_night(qdir, date)
-        print(f"  questctl.*.log in dir: {len(logs)}")
-        print(f"  CLOSE_CODE signals for UT night {date}: {n}")
+        print(f"  CLOSE_CODE signals for UT night {date}: {len(closes)}")
         if closes:
             print(f"  last CLOSE_CODE UTC: {closes[-1].isoformat()}")
     else:

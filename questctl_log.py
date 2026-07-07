@@ -32,11 +32,34 @@ def questctl_logs_for_night(log_dir: Path | None, night_date: str) -> list[Path]
     return out
 
 
+def _close_code_lines(path: Path):
+    """Yield lines containing CLOSE_CODE without loading the whole log into RAM."""
+    import subprocess
+
+    try:
+        r = subprocess.run(
+            ["grep", "CLOSE_CODE", str(path)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+        )
+        if r.stdout:
+            yield from r.stdout.splitlines()
+        return
+    except (OSError, FileNotFoundError):
+        pass
+
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if "CLOSE_CODE" in line:
+                yield line
+
+
 def load_questctl_closes(log_dir: Path | None, night_date: str) -> list[datetime]:
     """UTC datetimes from questctl CLOSE_CODE lines on this UT night."""
     out: list[datetime] = []
     for path in questctl_logs_for_night(log_dir, night_date):
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in _close_code_lines(path):
             m = CLOSE_CODE.search(line)
             if not m:
                 continue
