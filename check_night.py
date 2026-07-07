@@ -12,7 +12,12 @@ sys.path.insert(0, str(PACKAGE))
 from dome_daemon import count_daemon_closes_on_night, load_dome_daemon_closes
 from night_paths import diagnose_live_night, discover_live_nights, resolve_night_paths
 from practice_config import DIMM_LOG, DOME_DAEMON_LOG, QUESTCTL_LOG_DIR
-from questctl_log import count_questctl_closes_on_night, load_questctl_closes, questctl_logs_for_night
+from questctl_log import (
+    count_questctl_closes_on_night,
+    load_questctl_closes,
+    questctl_logs_for_night,
+    recent_questctl_closes,
+)
 from seeing_samples import load_dimm_samples
 
 
@@ -64,6 +69,14 @@ def main() -> int:
         print(f"  CLOSE_CODE signals for UT night {date}: {len(closes)}")
         if closes:
             print(f"  last CLOSE_CODE UTC: {closes[-1].isoformat()}")
+        else:
+            recent = recent_questctl_closes(qdir, limit=5)
+            if recent:
+                print("  (no CLOSE_CODE on this UT night; recent in logs:)")
+                for utc_dt, path in recent:
+                    print(f"    {utc_dt.isoformat()}  {path.name}")
+            else:
+                print("  (no CLOSE_CODE lines in any questctl log)")
     else:
         print("  directory not found")
 

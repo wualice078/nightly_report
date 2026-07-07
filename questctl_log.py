@@ -55,6 +55,22 @@ def _close_code_lines(path: Path):
                 yield line
 
 
+def recent_questctl_closes(log_dir: Path | None, *, limit: int = 5) -> list[tuple[datetime, Path]]:
+    """Last few CLOSE_CODE events in any questctl log (any UT night)."""
+    found: list[tuple[datetime, Path]] = []
+    for path in reversed(questctl_logs_for_night(log_dir, "")):
+        for line in _close_code_lines(path):
+            m = CLOSE_CODE.search(line)
+            if not m:
+                continue
+            found.append(
+                (datetime.fromtimestamp(int(m.group(1)), tz=timezone.utc), path)
+            )
+        if len(found) >= limit:
+            break
+    return sorted(found, key=lambda x: x[0])[-limit:]
+
+
 def load_questctl_closes(log_dir: Path | None, night_date: str) -> list[datetime]:
     """UTC datetimes from questctl CLOSE_CODE lines on this UT night."""
     out: list[datetime] = []
