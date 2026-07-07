@@ -76,6 +76,14 @@ def _set_close(
     )
 
 
+def _is_end_of_night_close(close_ut: float, exposure_ut: list[float], anchor: float) -> bool:
+    """True if close_ut is plausibly end-of-night (after last exposure, not a startup blip)."""
+    if not exposure_ut:
+        return True
+    last_exp = max(to_night_ut(u, anchor) for u in exposure_ut)
+    return to_night_ut(close_ut, anchor) >= last_exp - 0.25
+
+
 def dome_summary(
     scheduler_log: Path | None,
     *,
@@ -110,6 +118,13 @@ def dome_summary(
                 open_ut = None
 
     still_open = open_ut is not None
+    end_close = scheduler_close
+    if end_close is not None and exposure_ut and not _is_end_of_night_close(end_close, exposure_ut, anchor):
+        end_close = None
+        still_open = True
+        if open_ut is None and first_open is not None:
+            open_ut = first_open
+
     daemon_checked = False
     daemon_closes_on_night = 0
     questctl_checked = False
@@ -117,12 +132,12 @@ def dome_summary(
 
     summary = DomeSummary(
         first_open=first_open,
-        last_close=scheduler_close,
+        last_close=end_close,
         total_open_h=total_h,
         intervals=intervals,
         still_open=still_open,
         open_since=open_ut,
-        last_close_source="scheduler" if scheduler_close is not None else None,
+        last_close_source="scheduler" if end_close is not None else None,
         daemon_checked=daemon_checked,
         daemon_closes_on_night=daemon_closes_on_night,
         questctl_checked=questctl_checked,
@@ -168,8 +183,12 @@ def dome_summary(
                 }
             )
 
-    # 2) scheduler dome : closed (when TCS status was polled)
-    if scheduler_close is not None and not still_open:
+    # 2) scheduler dome : closed (when TCS status was polled, after last exposure)
+    if (
+        scheduler_close is not None
+        and not still_open
+        and _is_end_of_night_close(scheduler_close, exposure_ut, anchor)
+    ):
         return DomeSummary(
             first_open=first_open,
             last_close=scheduler_close,
@@ -239,7 +258,7 @@ def _format_utc(dt: datetime) -> str:
 
 
 def _resolved_close_lines(summary: DomeSummary) -> list[str]:
-    if summary.last_close is None or summary.last_close_source == "scheduler":
+    if summary.last_close is None:
         return []
     lines = [
         f"  ** close time (from {summary.last_close_source}): UT {summary.last_close:.5f} h"

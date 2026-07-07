@@ -43,6 +43,8 @@ def _close_source_label(source: str | None, note: str | None) -> str:
         return " (from dome_daemon.log)"
     if source == "questctl":
         return " (from questctl log)"
+    if source == "scheduler":
+        return " (from scheduler log)"
     return ""
 
 
