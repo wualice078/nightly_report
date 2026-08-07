@@ -7,18 +7,18 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parent
-sys.path.insert(0, str(PACKAGE))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-from build_dome_report import dome_summary
-from dome_daemon import (
+from build.build_dome_report import dome_summary
+from lib.dome_daemon import (
     _parse_daemon_timestamp,
     belongs_to_ut_night,
     find_night_close_from_daemon,
     load_dome_daemon_closes,
     utc_to_ut_decimal,
 )
-from practice_config import PRACTICE_DOME_DAEMON_LOG
+from lib.practice_config import PRACTICE_DOME_DAEMON_LOG
 
 
 def test_parse_daemon_timestamp() -> None:
@@ -64,7 +64,7 @@ def test_find_close_for_june_night() -> None:
 def test_questctl_preferred_over_scheduler_open_only() -> None:
     import tempfile
 
-    from practice_config import PRACTICE_QUESTCTL_LOG_DIR
+    from lib.practice_config import PRACTICE_QUESTCTL_LOG_DIR
 
     line = (
         "UT    :  22.62250  LST   :  21.887900  RA    :  21.858631  "
@@ -89,7 +89,7 @@ def test_questctl_preferred_over_scheduler_open_only() -> None:
 
 
 def test_scheduler_close_preferred() -> None:
-  from night_paths import resolve_night_paths
+  from lib.night_paths import resolve_night_paths
 
   paths = resolve_night_paths("20260529", allow_practice_fallback=True)
   summary = dome_summary(

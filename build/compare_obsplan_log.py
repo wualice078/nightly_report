@@ -33,15 +33,18 @@ def parse_obsplan(path: Path) -> list[PlannedField]:
         parts = body.split()
         if len(parts) < 7:
             continue
-        fields.append(
-            PlannedField(
+        try:
+            field = PlannedField(
                 float(parts[0]),
                 float(parts[1]),
                 parts[2],
                 int(parts[5]),
                 tag,
             )
-        )
+        except ValueError:
+            # Hand-edited obsplans occasionally have typos (e.g. "10.813.6169").
+            continue
+        fields.append(field)
     return fields
 
 

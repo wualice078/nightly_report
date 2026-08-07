@@ -6,14 +6,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parent
-sys.path.insert(0, str(PACKAGE))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-from build_dome_report import dome_summary
-from build_exposure_report import exposure_ut_list
-from night_paths import discover_live_nights, resolve_night_paths
-from practice_config import LIVE_DATA_ROOTS, QUESTCTL_LOG_DIR
-from questctl_log import count_questctl_closes_on_night
+from build.build_dome_report import dome_summary
+from build.build_exposure_report import exposure_ut_list
+from lib.night_paths import discover_live_nights, resolve_night_paths
+from lib.practice_config import LIVE_DATA_ROOTS, QUESTCTL_LOG_DIR
+from lib.questctl_log import count_questctl_closes_on_night
 
 
 def main() -> int:

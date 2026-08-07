@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from weather_samples import night_anchor_ut, to_night_ut
+from lib.weather_samples import night_anchor_ut, to_night_ut
 
 # Mountain `date` is usually 24h (no AM/PM); practice copies may use 12h.
 DAEMON_TS = re.compile(

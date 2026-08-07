@@ -8,12 +8,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from practice_config import (
+from lib.practice_config import (
     DIMM_LOG,
     DOME_DAEMON_LOG,
     GET_UT_DATE,
     LIVE_DATA_ROOTS,
-    OBSPLAN_ROOT,
     OBSPLAN_ROOTS,
     PRACTICE_DOME_DAEMON_LOG,
     PRACTICE_QUESTCTL_LOG_DIR,
@@ -72,6 +71,23 @@ def get_default_ut_date() -> str:
     return _fallback_ut_date()
 
 
+def _practice_night_files(date: str) -> tuple[Path, Path, Path] | None:
+    """Obsplan, log.obs, scheduler log for an archived night.
+
+    Archives come in two shapes: night/log.obs (all_logs) and
+    night/logs/log.obs (2026_recent_logs).
+    """
+    night_dir = PRACTICE_ROOT / date
+    for log_dir in (night_dir / "logs", night_dir):
+        log_obs = log_dir / "log.obs"
+        if not _is_file(log_obs):
+            continue
+        for obsplan in (night_dir / f"{date}.obsplan", log_dir / f"{date}.obsplan"):
+            if _is_file(obsplan):
+                return obsplan, log_obs, log_dir / f"{date}.log"
+    return None
+
+
 def discover_practice_nights() -> list[str]:
     nights = []
     if not _is_dir(PRACTICE_ROOT):
@@ -83,9 +99,7 @@ def discover_practice_nights() -> list[str]:
     for d in entries:
         if not _is_dir(d) or len(d.name) != 8 or not d.name.isdigit():
             continue
-        obs = d / f"{d.name}.obsplan"
-        log_obs = d / "logs" / "log.obs"
-        if _is_file(obs) and _is_file(log_obs):
+        if _practice_night_files(d.name):
             nights.append(d.name)
     return nights
 
@@ -125,26 +139,13 @@ def _night_paths(
 
 
 def _practice_paths(date: str) -> NightPaths | None:
-    night_dir = PRACTICE_ROOT / date
-    obsplan = night_dir / f"{date}.obsplan"
-    log_obs = night_dir / "logs" / "log.obs"
-    if not _is_file(obsplan) or not _is_file(log_obs):
+    found = _practice_night_files(date)
+    if not found:
         return None
+    obsplan, log_obs, sched = found
     return _night_paths(
-        date, obsplan, log_obs, night_dir / "logs" / f"{date}.log", PRACTICE_DOME_DAEMON_LOG, PRACTICE_QUESTCTL_LOG_DIR, "practice"
+        date, obsplan, log_obs, sched, PRACTICE_DOME_DAEMON_LOG, PRACTICE_QUESTCTL_LOG_DIR, "practice"
     )
-
-
-def live_data_root() -> Path:
-    for root in LIVE_DATA_ROOTS:
-        if not _is_dir(root):
-            continue
-        try:
-            if any(p.is_dir() and len(p.name) == 8 and p.name.isdigit() for p in root.iterdir()):
-                return root
-        except OSError:
-            continue
-    return LIVE_DATA_ROOTS[0]
 
 
 def _obsplan_candidates(date: str, data_root: Path) -> list[Path]:
@@ -229,5 +230,5 @@ def resolve_night_paths(date: str, *, allow_practice_fallback: bool = True) -> N
         return paths
     raise FileNotFoundError(
         f"no logs for night {date}. Expected live data or "
-        f"{PRACTICE_ROOT}/{date}/ with obsplan and logs/log.obs"
+        f"{PRACTICE_ROOT}/{date}/ with obsplan and log.obs (in the night dir or logs/)"
     )

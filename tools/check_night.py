@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
-"""One-command night diagnostics (works in tcsh: python3 ~/nightly_report/check_night.py DATE)."""
+"""One-command night diagnostics (tcsh: python3 ~/nightly_report/tools/check_night.py DATE)."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parent
-sys.path.insert(0, str(PACKAGE))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-from dome_daemon import count_daemon_closes_on_night, load_dome_daemon_closes
-from night_paths import diagnose_live_night, discover_live_nights, resolve_night_paths
-from practice_config import DIMM_LOG, DOME_DAEMON_LOG, QUESTCTL_LOG_DIR
-from questctl_log import (
-    count_questctl_closes_on_night,
+from lib.dome_daemon import count_daemon_closes_on_night, load_dome_daemon_closes
+from lib.night_paths import diagnose_live_night, resolve_night_paths
+from lib.practice_config import DIMM_LOG, DOME_DAEMON_LOG, QUESTCTL_LOG_DIR
+from lib.questctl_log import (
     load_questctl_closes,
     questctl_logs_for_night,
     recent_questctl_closes,
 )
-from seeing_samples import load_dimm_samples
+from lib.seeing_samples import load_dimm_samples
 
 
 def main() -> int:
-    date = sys.argv[1] if len(sys.argv) > 1 else None
-    if not date:
-        print("usage: python3 check_night.py YYYYMMDD")
+    args = sys.argv[1:]
+    # Accept "--date YYYYMMDD" too, for consistency with the other entry points.
+    if args and args[0] == "--date":
+        args = args[1:]
+    date = args[0] if args else None
+    if not date or not (len(date) == 8 and date.isdigit()):
+        print("usage: python3 tools/check_night.py YYYYMMDD")
         return 1
 
     print(f"=== night {date} ===\n")

@@ -1,7 +1,7 @@
 reports/*.txt
 reports/*.logs
 reports/cron_morning.log
-__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 .Python

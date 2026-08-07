@@ -6,12 +6,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parent
-sys.path.insert(0, str(PACKAGE))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-from build_dome_report import dome_summary
-from practice_config import PRACTICE_QUESTCTL_LOG_DIR
-from questctl_log import (
+from build.build_dome_report import dome_summary
+from lib.practice_config import PRACTICE_QUESTCTL_LOG_DIR
+from lib.questctl_log import (
     count_questctl_closes_on_night,
     find_night_close_from_questctl,
     load_questctl_closes,
@@ -52,8 +52,8 @@ def test_find_close_after_open() -> None:
 
 
 def test_dome_summary_accepts_questctl_dir() -> None:
-    from night_paths import resolve_night_paths
-    from build_exposure_report import exposure_ut_list
+    from lib.night_paths import resolve_night_paths
+    from build.build_exposure_report import exposure_ut_list
 
     paths = resolve_night_paths("20260530", allow_practice_fallback=True)
     exp_ut = exposure_ut_list(paths.log_obs)

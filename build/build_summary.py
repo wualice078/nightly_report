@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from build_dome_report import dome_summary
-from compare_obsplan_log import (
+from build.build_dome_report import dome_summary
+from build.compare_obsplan_log import (
     field_counts,
     is_observing_field,
     parse_log_obs,

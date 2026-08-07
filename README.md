@@ -45,7 +45,7 @@ git pull
 Morning cron:
 
 ```
-0 7 * * * /home/observer/nightly_report/send_morning_report.sh
+0 7 * * * /home/observer/nightly_report/cron_morning.sh
 ```
 
 ### DIMM column (optional)
@@ -75,25 +75,30 @@ All commands below assume `cd ~/nightly_report` (mountain) or the repo root (Nor
 
 ### Build a report
 
+Nothing is emailed unless you ask for it with `--to` or `--morning`.
+
 ```tcsh
 # Default night (get_ut_date)
-python3 send_report_email.py --build-only
+python3 make_report.py
 
 # Specific UT night (use this after ~8 AM local if get_ut_date already flipped)
-python3 send_report_email.py --date YYYYMMDD --build-only
+python3 make_report.py --date YYYYMMDD
 
 # Build and email
-python3 send_report_email.py --date YYYYMMDD --to you@example.edu
+python3 make_report.py --date YYYYMMDD --to you@example.edu
 
-# Northwestern: use practice archive when live data missing
-python3 send_report_email.py --date 20260530 --build-only --practice-fallback
+# Northwestern: use archived nights (~/all_logs) when live data missing
+python3 make_report.py --date 20260624 --practice-fallback
 ```
 
 ### Morning cron (manual run)
 
 ```tcsh
-~/nightly_report/send_morning_report.sh
+~/nightly_report/cron_morning.sh
 ```
+
+That wrapper picks a python, exports the mountain `LS4_*` variables, and runs
+`make_report.py --morning`, which emails the recipient in `lib/practice_config.py`.
 
 Log: `~/nightly_report/reports/cron_morning.log`
 
@@ -101,7 +106,7 @@ Log: `~/nightly_report/reports/cron_morning.log`
 
 ```tcsh
 set NIGHT = 20260624
-python3 check_night.py $NIGHT
+python3 tools/check_night.py $NIGHT
 ```
 
 Shows which input files exist, scheduler `dome:closed` count, questctl `CLOSE_CODE` count, dome_daemon closes, and dimm.logs sample count.
@@ -109,18 +114,25 @@ Shows which input files exist, scheduler `dome:closed` count, questctl `CLOSE_CO
 ### Batch build (Northwestern / testing)
 
 ```bash
-python3 build_all_reports.py --practice-fallback
-python3 build_all_reports.py --date 20260529 --date 20260530 --build-only
+python3 tools/build_all_reports.py
+python3 tools/build_all_reports.py --date 20260529 --date 20260530
 ```
 
 ### Tests
 
+`test_practice_nights.py` builds a report for every archived night under
+`PRACTICE_ROOT` (`~/all_logs`, Oct 2025 onward) and checks the counts against
+`log.obs`. Point `LS4_PRACTICE_ROOT` elsewhere to test a different archive;
+both `night/log.obs` and `night/logs/log.obs` layouts work.
+
 ```bash
-python3 test_practice_nights.py
-python3 test_practice_nights.py --date 20260530
-python3 test_dome_daemon.py
-python3 test_questctl_log.py
-python3 test_seeing_samples.py
+python3 tests/test_practice_nights.py
+python3 tests/test_practice_nights.py --date 20260624
+python3 tests/test_practice_nights.py --no-write        # don't touch reports/
+LS4_PRACTICE_ROOT=~/2026_recent_logs/obslogs_and_plans python3 tests/test_practice_nights.py
+python3 tests/test_dome_daemon.py
+python3 tests/test_questctl_log.py
+python3 tests/test_seeing_samples.py
 ```
 
 ### Verify dome close on the mountain
@@ -144,16 +156,16 @@ tail -5 $LS4_ROOT/logs/dimm.logs
 obsplan + log.obs + scheduler log + questctl/dome_daemon/dimm logs
         │
         ▼
-  night_paths.py          resolve paths for one UT night
+  lib/night_paths.py       resolve paths for one UT night
         │
         ▼
-  send_report_email.py    assemble sections → report_YYYYMMDD.txt
+  make_report.py           assemble sections → report_YYYYMMDD.txt
         │
-        ├── build_summary.py       field counts + dome times
-        ├── compare_obsplan_log.py field inventory
-        ├── build_exposure_report.py  exposures + weather + DIMM join
-        ├── build_dome_report.py   dome timeline + close resolution
-        └── build_weather_report.py  30-min weather grid
+        ├── build/build_summary.py          field counts + dome times
+        ├── build/compare_obsplan_log.py    field inventory
+        ├── build/build_exposure_report.py  exposures + weather + DIMM
+        ├── build/build_dome_report.py      dome timeline + close resolution
+        └── build/build_weather_report.py   30-min weather grid
 ```
 
 After a successful **morning** live report, `dimm.logs` is archived to `~/data/YYYYMMDD/logs/dimm.logs` and the live file is truncated.
@@ -162,33 +174,39 @@ After a successful **morning** live report, `dimm.logs` is archived to `~/data/Y
 
 ## Repository layout
 
-| File | Role |
+```
+nightly_report/
+  make_report.py            # the one entry point: build a night, optionally email
+  cron_morning.sh           # what cron runs (env + interpreter + logging)
+  build/                    # report section builders
+  lib/                      # paths, config, log parsers
+  tools/                    # check_night, batch build
+  tests/                    # unit + practice-night tests
+  reports/                  # output report_YYYYMMDD.txt
+  mountain_deploy/          # DIMM hook snippet for ntt_dome_status
+  examples/                 # sample report layout
+```
+
+| Path | Role |
 |------|------|
-| `send_report_email.py` | Main entry: build report, optional email, optional dimm.logs cleanup |
-| `send_morning_report.py` | Cron entry point |
-| `send_morning_report.sh` | Cron wrapper; exports mountain env vars |
-| `night_paths.py` | Find obsplan, log.obs, scheduler log, dimm.logs for one night |
-| `practice_config.py` | Paths, email recipient, env defaults |
-| `compare_obsplan_log.py` | Parse obsplan / log.obs; field completion |
-| `build_summary.py` | Night summary section |
-| `build_exposure_report.py` | Exposure table with weather + DIMM |
-| `build_dome_report.py` | Dome section; questctl → scheduler → dome_daemon |
-| `build_weather_report.py` | 30-min weather grid |
-| `weather_samples.py` | Parse scheduler weather + dome status lines |
-| `questctl_log.py` | Parse questctl `CLOSE_CODE` timestamps |
-| `dome_daemon.py` | Parse dome_daemon.log closes |
-| `seeing_samples.py` | Load dimm.logs; nearest match per exposure |
-| `check_night.py` | One-night diagnostics |
-| `build_all_reports.py` | Batch-build many nights |
-| `mountain_deploy/ntt_dome_status` | Reference snippet to paste into `$LS4_ROOT/bin/ntt_dome_status` for DIMM |
-| `examples/report_example.txt` | Sample report layout |
-| `test_*.py` | Unit and practice-night tests |
+| `make_report.py` | Build one night's report; email with `--to`/`--morning`; dimm.logs cleanup |
+| `cron_morning.sh` | Cron wrapper; picks python, exports mountain env vars, logs output |
+| `build/` | One module per report section (summary, fields, exposures, dome, weather) |
+| `lib/night_paths.py` | Find obsplan, log.obs, scheduler log, dimm.logs for one night |
+| `lib/practice_config.py` | Paths, email recipient, env defaults |
+| `lib/weather_samples.py` | Parse scheduler weather + dome status lines |
+| `lib/questctl_log.py` | Parse questctl `CLOSE_CODE` timestamps |
+| `lib/dome_daemon.py` | Parse dome_daemon.log closes |
+| `lib/seeing_samples.py` | Load dimm.logs; nearest match per exposure |
+| `tools/check_night.py` | One-night diagnostics |
+| `tools/build_all_reports.py` | Batch-build many nights |
+| `tests/` | Unit and practice-night tests |
 
 ---
 
 ## Environment variables
 
-Set by `send_morning_report.sh` on the mountain unless overridden.
+Set by `cron_morning.sh` on the mountain unless overridden.
 
 | Variable | Default (mountain) | Purpose |
 |----------|-------------------|---------|
@@ -206,7 +224,7 @@ Set by `send_morning_report.sh` on the mountain unless overridden.
 
 ## Night date default
 
-`send_report_email.py` with no `--date` calls `get_ut_date` (same as the rest of LS4). Morning cron at 7 AM runs before that label flips (~8 AM local). To rebuild a specific finished night anytime: `--date YYYYMMDD`.
+`make_report.py` with no `--date` calls `get_ut_date` (same as the rest of LS4). Morning cron at 7 AM runs before that label flips (~8 AM local). To rebuild a specific finished night anytime: `--date YYYYMMDD`.
 
 ---
 
@@ -214,7 +232,7 @@ Set by `send_morning_report.sh` on the mountain unless overridden.
 
 | Symptom | Check |
 |---------|--------|
-| No dome close | `python3 check_night.py YYYYMMDD` — look for `CLOSE_CODE signals for UT night …: N` (not bare `grep \| tail`, which mixes nights). Questctl scans **all** `~/logs/questctl.*.log` files (long-running logs keep the start date in the filename). |
+| No dome close | `python3 tools/check_night.py YYYYMMDD` — look for `CLOSE_CODE signals for UT night …: N` (not bare `grep \| tail`, which mixes nights). Questctl scans **all** `~/logs/questctl.*.log` files (long-running logs keep the start date in the filename). |
 | DIMM all `n/a` | `tail ~/logs/dimm.logs` — add DIMM block to `ntt_dome_status` (see Deploy) |
 | Missing night data | `ls ~/data/YYYYMMDD/logs/log.obs` |
 | Wrong user | Run as **observer**, not `ls4` |

@@ -22,8 +22,10 @@ MORNING_REPORT_LIVE_ONLY = _live_only()
 HOME = Path.home()
 OBSERVER_ROOT = Path(os.environ.get("LS4_OBSERVER_ROOT", "/home/observer"))
 
+# Archived nights for testing: ~/all_logs (Oct 2025 onward).
+# Older copy with a logs/ subdir per night: ~/2026_recent_logs/obslogs_and_plans
 PRACTICE_ROOT = Path(
-    os.environ.get("LS4_PRACTICE_ROOT", str(OBSERVER_ROOT / "2026_recent_logs/obslogs_and_plans"))
+    os.environ.get("LS4_PRACTICE_ROOT", str(OBSERVER_ROOT / "all_logs"))
 )
 PRACTICE_NIGHTS: list[str] | None = None
 
@@ -56,7 +58,6 @@ OBSPLAN_ROOTS = _unique_paths(
         OBSERVER_ROOT / "obsplans",
     ]
 )
-OBSPLAN_ROOT = OBSPLAN_ROOTS[0]
 
 DOME_DAEMON_LOG = Path(
     os.environ.get("LS4_DOME_DAEMON_LOG", str(OBSERVER_ROOT / "logs/dome_daemon.log"))
@@ -67,12 +68,8 @@ QUESTCTL_LOG_DIR = Path(
     os.environ.get("LS4_QUESTCTL_LOG_DIR", str(OBSERVER_ROOT / "logs"))
 )
 DIMM_LOG = Path(os.environ.get("LS4_DIMM_LOG", str(_LS4_ROOT / "logs/dimm.logs")))
-ESO_DIMM_URL = os.environ.get(
-    "LS4_ESO_DIMM_URL",
-    "https://www.ls.eso.org/lasilla/dimm/dimm.last",
-)
 PRACTICE_DOME_DAEMON_LOG = OBSERVER_ROOT / "recent_logs/logfiles/dome_daemon.log"
 PRACTICE_QUESTCTL_LOG_DIR = OBSERVER_ROOT / "recent_logs/logfiles"
 GET_UT_DATE = Path(os.environ.get("LS4_GET_UT_DATE", str(OBSERVER_ROOT / "bin/get_ut_date")))
 
-# NUC: ~/nightly_report/   Cron: 0 7 * * * ~/nightly_report/send_morning_report.sh
+# NUC: ~/nightly_report/   Cron: 0 7 * * * ~/nightly_report/cron_morning.sh

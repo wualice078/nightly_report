@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from weather_samples import (
+from lib.weather_samples import (
     GRID_STEP,
     WeatherSample,
     display_ut,

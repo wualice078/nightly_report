@@ -7,8 +7,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dome_daemon import belongs_to_ut_night, utc_to_ut_decimal
-from weather_samples import night_anchor_ut, to_night_ut
+from lib.dome_daemon import belongs_to_ut_night, utc_to_ut_decimal
+from lib.weather_samples import night_anchor_ut, to_night_ut
 
 CLOSE_CODE = re.compile(r"signal code has been set to CLOSE_CODE\s+(\d+)")
 

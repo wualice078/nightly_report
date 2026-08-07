@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dome_daemon import (
+from lib.dome_daemon import (
     count_daemon_closes_on_night,
     daemon_close_note,
     find_night_close_from_daemon,
 )
-from questctl_log import count_questctl_closes_on_night, find_night_close_from_questctl
-from weather_samples import load_dome_events, night_anchor_ut, to_night_ut
+from lib.questctl_log import count_questctl_closes_on_night, find_night_close_from_questctl
+from lib.weather_samples import load_dome_events, night_anchor_ut, to_night_ut
 
 
 @dataclass(frozen=True)

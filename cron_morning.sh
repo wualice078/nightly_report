@@ -1,6 +1,6 @@
 #!/bin/bash
-# Morning cron wrapper — logs output for debugging.
-# Install on mountain (observer): 0 7 * * * /home/observer/nightly_report/send_morning_report.sh
+# Morning cron wrapper: picks a python, sets mountain env vars, logs output.
+# Install on mountain (observer): 0 7 * * * /home/observer/nightly_report/cron_morning.sh
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG="$DIR/reports/cron_morning.log"
 PY="${LS4_PYTHON:-}"
@@ -27,5 +27,5 @@ mkdir -p "$DIR/reports"
 {
   echo "=== $(date -Iseconds) ==="
   echo "package=$DIR observer_root=$LS4_OBSERVER_ROOT python=$PY"
-  "$PY" "$DIR/send_morning_report.py"
+  "$PY" "$DIR/make_report.py" --morning
 } >> "$LOG" 2>&1

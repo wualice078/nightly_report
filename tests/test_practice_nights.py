@@ -14,16 +14,16 @@ import re
 import sys
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parent
-sys.path.insert(0, str(PACKAGE))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-from build_exposure_report import _is_observing, _parse_line
-from compare_obsplan_log import is_observing_field, parse_obsplan, parse_log_obs
-from practice_config import PRACTICE_ROOT
-from send_report_email import build_full_report
-from night_paths import discover_practice_nights, practice_night_list, resolve_night_paths
+from build.build_exposure_report import _is_observing, _parse_line
+from build.compare_obsplan_log import is_observing_field, parse_obsplan, parse_log_obs
+from lib.practice_config import PRACTICE_ROOT
+from make_report import build_full_report
+from lib.night_paths import discover_practice_nights, practice_night_list, resolve_night_paths
 
-REPORTS = PACKAGE / "reports"
+REPORTS = ROOT / "reports"
 
 
 def _count_exposures(log_obs: Path) -> tuple[int, int, int]:
@@ -44,12 +44,16 @@ def validate(date: str, paths, report: str) -> list[str]:
     log_lines = parse_log_obs(paths.log_obs)
     total, obs_n, cal_n = _count_exposures(paths.log_obs)
 
-    m_obs = re.search(r"Observing \((\d+)\)", report)
-    m_cal = re.search(r"Calibration \((\d+)\)", report)
-    if not m_obs or int(m_obs.group(1)) != obs_n:
-        errors.append(f"observing count: report={m_obs.group(1) if m_obs else '?'} log={obs_n}")
-    if not m_cal or int(m_cal.group(1)) != cal_n:
-        errors.append(f"calibration count: report={m_cal.group(1) if m_cal else '?'} log={cal_n}")
+    if total == 0:
+        if "(no exposures)" not in report:
+            errors.append("empty log.obs not reported as '(no exposures)'")
+    else:
+        m_obs = re.search(r"Observing \((\d+)\)", report)
+        m_cal = re.search(r"Calibration \((\d+)\)", report)
+        if not m_obs or int(m_obs.group(1)) != obs_n:
+            errors.append(f"observing count: report={m_obs.group(1) if m_obs else '?'} log={obs_n}")
+        if not m_cal or int(m_cal.group(1)) != cal_n:
+            errors.append(f"calibration count: report={m_cal.group(1) if m_cal else '?'} log={cal_n}")
 
     if f"exposures in log: {len(log_lines)}" not in report:
         errors.append(f"log.obs line count {len(log_lines)} not in report header")

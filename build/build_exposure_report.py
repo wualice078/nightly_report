@@ -6,8 +6,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from seeing_samples import dimm_for_exposure, load_dimm_samples
-from weather_samples import (
+from lib.seeing_samples import dimm_for_exposure, load_dimm_samples
+from lib.weather_samples import (
     load_dome_events,
     load_scheduler_weather,
     nearest_on_night,

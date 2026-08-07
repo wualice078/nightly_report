@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Build and email the LS4 nightly report.
+Build one night's LS4 report. Writes reports/report_YYYYMMDD.txt; only emails
+when given a recipient.
 
 Mountain:
-  python3 send_report_email.py --build-only
-  python3 send_report_email.py --date YYYYMMDD --build-only
+  python3 make_report.py
+  python3 make_report.py --date YYYYMMDD
+  python3 make_report.py --morning            # what cron_morning.sh runs
 
 Practice:
-  python3 send_report_email.py --date YYYYMMDD --build-only --practice-fallback
+  python3 make_report.py --date YYYYMMDD --practice-fallback
 """
 
 from __future__ import annotations
@@ -23,14 +25,14 @@ PACKAGE = Path(__file__).resolve().parent
 REPORTS = PACKAGE / "reports"
 sys.path.insert(0, str(PACKAGE))
 
-from build_dome_report import build_dome_section
-from build_exposure_report import build_exposure_section, exposure_ut_list
-from build_summary import build_summary_section
-from build_weather_report import build_weather_section
-from compare_obsplan_log import build_fields_section
-from night_paths import NightPaths, get_default_ut_date, resolve_night_paths
-from practice_config import DIMM_LOG, MORNING_REPORT_LIVE_ONLY
-from seeing_samples import archive_and_clear_dimm_log
+from build.build_dome_report import build_dome_section
+from build.build_exposure_report import build_exposure_section, exposure_ut_list
+from build.build_summary import build_summary_section
+from build.build_weather_report import build_weather_section
+from build.compare_obsplan_log import build_fields_section
+from lib.night_paths import NightPaths, get_default_ut_date, resolve_night_paths
+from lib.practice_config import DIMM_LOG, MORNING_REPORT_EMAIL, MORNING_REPORT_LIVE_ONLY
+from lib.seeing_samples import archive_and_clear_dimm_log
 
 
 def build_missing_report(date: str, error: str) -> str:
@@ -82,10 +84,17 @@ def build_full_report(paths: NightPaths) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--date")
-    ap.add_argument("--to")
-    ap.add_argument("--build-only", action="store_true")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--date", help="UT night YYYYMMDD (default: last night)")
+    ap.add_argument("--to", help="Email the report to this address")
+    ap.add_argument(
+        "--morning",
+        action="store_true",
+        help=f"Cron mode: email the configured recipient ({MORNING_REPORT_EMAIL})",
+    )
+    # Reports are only emailed when a recipient is given, so this is a no-op kept
+    # so older cron lines and scripts do not break.
+    ap.add_argument("--build-only", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--practice-fallback", action="store_true", help="Use practice archive if live logs missing")
     ap.add_argument("--no-practice-fallback", action="store_true", help="Live data only (same as mountain default)")
     ap.add_argument("--subject")
@@ -102,6 +111,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    recipient = MORNING_REPORT_EMAIL if args.morning else args.to
     date = args.date or get_default_ut_date()
     REPORTS.mkdir(exist_ok=True)
     report = args.report or (REPORTS / f"report_{date}.txt")
@@ -143,7 +153,7 @@ def main() -> int:
                     file=sys.stderr,
                 )
 
-    if args.build_only or not args.to:
+    if not recipient:
         return 0
 
     if shutil.which("mail") is None:
@@ -155,7 +165,7 @@ def main() -> int:
 
     practice_tag = " [PRACTICE]" if paths and paths.source == "practice" else ""
     r = subprocess.run(
-        ["mail", "-s", args.subject or f"LS4 nightly report {date}{practice_tag}", "-a", str(report), args.to],
+        ["mail", "-s", args.subject or f"LS4 nightly report {date}{practice_tag}", "-a", str(report), recipient],
         input=f"LS4 nightly report attached.{practice_tag}\n",
         text=True,
         capture_output=True,
@@ -163,7 +173,7 @@ def main() -> int:
     if r.returncode != 0:
         print(r.stderr or r.stdout or "mail failed", file=sys.stderr)
         return 1
-    print(f"Sent to {args.to}")
+    print(f"Sent to {recipient}")
     return 0
 
 

@@ -152,8 +152,3 @@ def nearest_on_night(
         if d <= max_delta and d < best_d:
             best, best_d = s, d
     return best
-
-
-def nearest(ut: float, samples: list[WeatherSample], max_delta: float) -> WeatherSample | None:
-    anchor = night_anchor_ut([], [ut])
-    return nearest_on_night(to_night_ut(ut, anchor), samples, anchor, max_delta)

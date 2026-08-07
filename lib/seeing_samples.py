@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dome_daemon import belongs_to_ut_night, utc_to_ut_decimal
-from weather_samples import to_night_ut
+from lib.dome_daemon import belongs_to_ut_night, utc_to_ut_decimal
+from lib.weather_samples import to_night_ut
 
 DIMM_LOG_LINE = re.compile(
     r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z\s+([\d.]+)(?:\s+(\S+))?\s*$"
@@ -57,11 +57,6 @@ def load_dimm_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
     return out
 
 
-def load_seeing_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
-    """Alias for load_dimm_samples."""
-    return load_dimm_samples(path, night_date)
-
-
 def nearest_seeing_on_night(
     night_ut: float,
     samples: list[SeeingSample],
@@ -95,15 +90,6 @@ def archive_and_clear_dimm_log(
 ) -> int:
     """Archive this night's dimm.logs lines, then truncate the live file."""
     return _archive_and_clear_log(log_path, night_date, archive_path)
-
-
-def archive_and_clear_seeing_log(
-    log_path: Path,
-    night_date: str,
-    archive_path: Path | None = None,
-) -> int:
-    """Alias for archive_and_clear_dimm_log."""
-    return archive_and_clear_dimm_log(log_path, night_date, archive_path)
 
 
 def _lines_for_night(log_path: Path, night_date: str) -> list[str]:
