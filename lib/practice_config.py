@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
-"""Settings for nightly reports (NUC production + Northwestern practice)."""
+"""
+Configuration and path defaults for LS4 nightly reports.
+
+This module centralizes environment-variable overrides used on the mountain
+NUC (``observer@ls4-workstn``) and on Northwestern practice machines. Paths
+here are consumed by :mod:`lib.night_paths` when resolving obsplan, ``log.obs``,
+scheduler logs, questctl logs, dome_daemon logs, and DIMM samples for one UT night.
+
+Environment variables (see README for full list):
+
+    LS4_OBSERVER_ROOT, LS4_ROOT, LS4_DATA_ROOT, LS4_OBSPLAN_ROOT,
+    LS4_QUESTCTL_LOG_DIR, LS4_DOME_DAEMON_LOG, LS4_DIMM_LOG,
+    LS4_GET_UT_DATE, LS4_PRACTICE_ROOT, LS4_LIVE_ONLY
+"""
 
 from __future__ import annotations
 
@@ -11,6 +24,7 @@ MORNING_REPORT_EMAIL = "wualice078@berkeley.edu"
 
 
 def _live_only() -> bool:
+    """Return True when morning cron should use live data only (no practice archive)."""
     v = os.environ.get("LS4_LIVE_ONLY")
     if v is not None:
         return v not in ("0", "false", "False", "no", "NO")
@@ -31,6 +45,7 @@ PRACTICE_NIGHTS: list[str] | None = None
 
 
 def _unique_paths(paths: list[Path]) -> list[Path]:
+    """Deduplicate path list while preserving order."""
     seen: set[str] = set()
     out: list[Path] = []
     for p in paths:

@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
 """
-Build one night's LS4 report. Writes reports/report_YYYYMMDD.txt; only emails
-when given a recipient.
+Build one night's LS4 text report and optionally email it.
 
-Mountain:
-  python3 make_report.py
-  python3 make_report.py --date YYYYMMDD
-  python3 make_report.py --morning            # what cron_morning.sh runs
+This is the **single entry point** for the nightly report pipeline. It resolves
+input paths (:mod:`lib.night_paths`), assembles five sections from :mod:`build`,
+writes ``reports/report_YYYYMMDD.txt``, and optionally emails the result.
 
-Practice:
-  python3 make_report.py --date YYYYMMDD --practice-fallback
+Sections (in order):
+
+    1. Night summary — :mod:`build.build_summary`
+    2. Field inventory — :mod:`build.compare_obsplan_log`
+    3. Exposures — :mod:`build.build_exposure_report`
+    4. Dome — :mod:`build.build_dome_report`
+    5. Weather — :mod:`build.build_weather_report`
+
+Mountain usage::
+
+    python3 make_report.py
+    python3 make_report.py --date YYYYMMDD
+    python3 make_report.py --morning            # cron_morning.sh
+
+Practice / Northwestern::
+
+    python3 make_report.py --date YYYYMMDD --practice-fallback
 """
 
 from __future__ import annotations
@@ -36,6 +49,12 @@ from lib.seeing_samples import archive_and_clear_dimm_log
 
 
 def build_missing_report(date: str, error: str) -> str:
+    """
+    Build a minimal report when required input files are missing.
+
+    Used on the mountain when ``--no-practice-fallback`` is set and live data
+    for ``date`` is not yet available.
+    """
     return (
         f"LS4 NIGHTLY REPORT - {date}\n"
         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
@@ -45,6 +64,11 @@ def build_missing_report(date: str, error: str) -> str:
 
 
 def build_full_report(paths: NightPaths) -> str:
+    """
+    Assemble all report sections for one resolved night.
+
+    ``paths`` comes from :func:`lib.night_paths.resolve_night_paths`.
+    """
     exp_ut = exposure_ut_list(paths.log_obs)
     header = (
         f"LS4 NIGHTLY REPORT - {paths.date}\n"
@@ -84,6 +108,11 @@ def build_full_report(paths: NightPaths) -> str:
 
 
 def main() -> int:
+    """
+    CLI entry point: parse args, build report, optional email and dimm cleanup.
+
+    Returns 0 on success, 1 on build or mail failure.
+    """
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--date", help="UT night YYYYMMDD (default: last night)")
     ap.add_argument("--to", help="Email the report to this address")

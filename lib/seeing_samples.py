@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""ESO DIMM samples from ~/logs/dimm.logs (written by ntt_dome_status on the mountain)."""
+"""
+Load ESO DIMM seeing samples from ``dimm.logs``.
+
+On the mountain, ``ntt_dome_status`` appends lines like
+``2026-06-24T15:00:00Z 0.662`` to ``~/logs/dimm.logs`` roughly every 60 s.
+The exposure table joins the nearest sample within 10 minutes of each exposure UT.
+
+After a successful **morning** live report, :func:`archive_and_clear_dimm_log`
+copies this night's lines to ``data/YYYYMMDD/logs/dimm.logs`` and truncates the
+live file (see :mod:`make_report`).
+"""
 
 from __future__ import annotations
 
@@ -20,15 +30,19 @@ SEEING_JOIN_TOL = 10.0 / 60.0
 
 @dataclass(frozen=True)
 class SeeingSample:
+    """One DIMM arcsec measurement at decimal UT hours."""
+
     ut: float
     arcsec: str
 
 
 def format_arcsec(val: float) -> str:
+    """Format arcsec to three decimal places for report columns."""
     return f"{val:.3f}"
 
 
 def _parse_log_line(line: str) -> tuple[datetime, str] | None:
+    """Parse one ``dimm.logs`` line into ``(utc_datetime, arcsec_string)``."""
     m = DIMM_LOG_LINE.match(line.strip())
     if not m:
         return None
@@ -41,7 +55,12 @@ def _parse_log_line(line: str) -> tuple[datetime, str] | None:
 
 
 def load_dimm_samples(path: Path | None, night_date: str) -> list[SeeingSample]:
-    """Load UTC-stamped arcsec lines from dimm.logs for one UT night."""
+    """
+    Load UTC-stamped arcsec lines from ``dimm.logs`` for one UT night.
+
+    Returns samples sorted by UT. Empty when the file is missing or has no
+    matching lines.
+    """
     if path is None or not path.is_file():
         return []
     out: list[SeeingSample] = []
@@ -63,7 +82,11 @@ def nearest_seeing_on_night(
     anchor: float,
     max_delta: float = SEEING_JOIN_TOL,
 ) -> SeeingSample | None:
-    """Nearest DIMM sample on the continuous night timeline."""
+    """
+    Return the closest DIMM sample to ``night_ut`` within ``max_delta`` hours.
+
+    Uses the continuous night timeline (:func:`lib.weather_samples.to_night_ut`).
+    """
     best: SeeingSample | None = None
     best_d = max_delta + 1.0
     for s in samples:
@@ -78,7 +101,9 @@ def dimm_for_exposure(
     anchor: float,
     samples: list[SeeingSample],
 ) -> str:
-    """Nearest dimm.logs sample on the night timeline, or n/a if none within tolerance."""
+    """
+    Return arcsec string for an exposure, or ``n/a`` if no sample is close enough.
+    """
     hit = nearest_seeing_on_night(night_ut, samples, anchor)
     return hit.arcsec if hit else "n/a"
 
@@ -88,11 +113,17 @@ def archive_and_clear_dimm_log(
     night_date: str,
     archive_path: Path | None = None,
 ) -> int:
-    """Archive this night's dimm.logs lines, then truncate the live file."""
+    """
+    Archive this night's ``dimm.logs`` lines, then truncate the live file.
+
+    Returns the number of lines archived. When ``archive_path`` is set and lines
+    exist, writes them there before clearing ``log_path``.
+    """
     return _archive_and_clear_log(log_path, night_date, archive_path)
 
 
 def _lines_for_night(log_path: Path, night_date: str) -> list[str]:
+    """Collect raw log lines belonging to UT night ``night_date``."""
     if not log_path.is_file():
         return []
     out: list[str] = []
@@ -111,6 +142,7 @@ def _archive_and_clear_log(
     night_date: str,
     archive_path: Path | None = None,
 ) -> int:
+    """Internal helper for :func:`archive_and_clear_dimm_log`."""
     lines = _lines_for_night(log_path, night_date)
     if archive_path is not None and lines:
         archive_path.parent.mkdir(parents=True, exist_ok=True)

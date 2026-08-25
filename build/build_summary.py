@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Lead-observer summary: field completion and dome times."""
+"""
+Lead-observer summary section for the nightly report.
+
+Combines field completion counts (from obsplan vs ``log.obs``) with dome open/
+close times (from :mod:`build.build_dome_report`). This is the first section in
+``report_YYYYMMDD.txt`` after the header.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +21,7 @@ from build.compare_obsplan_log import (
 
 
 def _format_field_line(label: str, s: dict[str, int]) -> str:
+    """Format one planned/complete/partial/not-observed summary line."""
     return (
         f"  {label}: {s['planned']} planned, "
         f"{s['complete']} complete, {s['partial']} partial, {s['not_observed']} not observed"
@@ -22,6 +29,7 @@ def _format_field_line(label: str, s: dict[str, int]) -> str:
 
 
 def _format_ut(ut: float) -> str:
+    """Format decimal UT hours as ``HH:MM:SS UT`` with fractional hour in parens."""
     h = int(ut)
     m = int((ut - h) * 60)
     s = round(((ut - h) * 60 - m) * 60)
@@ -35,6 +43,7 @@ def _format_ut(ut: float) -> str:
 
 
 def _close_source_label(source: str | None, note: str | None) -> str:
+    """Append a short parenthetical describing where the dome close time came from."""
     if source is None:
         return ""
     if note:
@@ -58,6 +67,12 @@ def build_summary_section(
     questctl_log_dir: Path | None = None,
     exposure_ut: list[float] | None = None,
 ) -> str:
+    """
+    Build the ``=== Night summary ===`` report section.
+
+    Parameters mirror :func:`build.build_dome_report.dome_summary` so dome close
+    resolution uses questctl → scheduler → dome_daemon in that order.
+    """
     planned = parse_obsplan(obsplan)
     log_lines = parse_log_obs(log_obs)
     obs = field_counts([f for f in planned if is_observing_field(f)], log_lines)

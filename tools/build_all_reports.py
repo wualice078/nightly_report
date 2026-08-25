@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Build and store text reports for all available live nights.
+Batch-build stored text reports for many UT nights.
 
-Writes one file per night under nightly_report/reports/report_YYYYMMDD.txt
-(same location as the morning cron job).
+Invokes :mod:`make_report` once per night and writes
+``reports/report_YYYYMMDD.txt`` for each. Used on Northwestern to regenerate
+practice reports or backfill live nights.
 
-Usage:
-  python3 tools/build_all_reports.py
-  python3 tools/build_all_reports.py --date 20260608 --date 20260609
-  python3 tools/build_all_reports.py --no-practice-fallback
+Usage::
+
+    python3 tools/build_all_reports.py
+    python3 tools/build_all_reports.py --date 20260608 --date 20260609
+    python3 tools/build_all_reports.py --no-practice-fallback
 """
 
 from __future__ import annotations
@@ -22,6 +24,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main() -> int:
+    """
+    Discover nights and run ``make_report.py --date`` for each.
+
+    Returns 0 when all builds succeed, 1 if any night failed.
+    """
     sys.path.insert(0, str(ROOT))
     from lib.night_paths import discover_live_nights, practice_night_list
 

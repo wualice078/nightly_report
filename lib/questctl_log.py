@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Parse dome close times from questctl logs (manual closedome / operator signal)."""
+"""
+Parse dome close times from questctl logs (manual ``closedome``).
+
+When an operator runs ``closedome``, questctl logs a ``CLOSE_CODE`` line with a
+Unix epoch timestamp. This is the **primary** source for end-of-night dome close
+time in the nightly report.
+
+Note: questctl log filenames reflect the process **start** time; a single log may
+span weeks. Always filter ``CLOSE_CODE`` events by UTC timestamp, not filename.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +24,10 @@ CLOSE_CODE = re.compile(r"signal code has been set to CLOSE_CODE\s+(\d+)")
 
 def questctl_logs_for_night(log_dir: Path | None, night_date: str) -> list[Path]:
     """
-    questctl.YYYYMMDDHHMMSS.log files to scan for this UT night.
+    Return all ``questctl.*.log`` files to scan for a UT night.
 
-    questctl often runs for weeks in one log (filename = start time only), so we
-    scan every questctl.*.log and filter CLOSE_CODE by timestamp, not filename.
+    ``night_date`` is accepted for API symmetry; filtering is done by
+    :func:`load_questctl_closes` using each ``CLOSE_CODE`` epoch.
     """
     _ = night_date  # filtering is by CLOSE_CODE epoch in load_questctl_closes
     if log_dir is None or not log_dir.is_dir():
@@ -33,7 +42,11 @@ def questctl_logs_for_night(log_dir: Path | None, night_date: str) -> list[Path]
 
 
 def _close_code_lines(path: Path):
-    """Yield lines containing CLOSE_CODE without loading the whole log into RAM."""
+    """
+    Yield lines containing ``CLOSE_CODE`` without loading the whole log into RAM.
+
+    Uses ``grep`` when available; falls back to a streaming file read.
+    """
     import subprocess
 
     try:
@@ -56,7 +69,12 @@ def _close_code_lines(path: Path):
 
 
 def recent_questctl_closes(log_dir: Path | None, *, limit: int = 5) -> list[tuple[datetime, Path]]:
-    """Last few CLOSE_CODE events in any questctl log (any UT night)."""
+    """
+    Return the most recent ``CLOSE_CODE`` events across all questctl logs.
+
+    Useful for diagnostics when a night has no matching close (see
+    :mod:`tools.check_night`).
+    """
     found: list[tuple[datetime, Path]] = []
     for path in reversed(questctl_logs_for_night(log_dir, "")):
         for line in _close_code_lines(path):
@@ -72,7 +90,9 @@ def recent_questctl_closes(log_dir: Path | None, *, limit: int = 5) -> list[tupl
 
 
 def load_questctl_closes(log_dir: Path | None, night_date: str) -> list[datetime]:
-    """UTC datetimes from questctl CLOSE_CODE lines on this UT night."""
+    """
+    Return UTC datetimes from ``CLOSE_CODE`` lines belonging to UT night ``night_date``.
+    """
     out: list[datetime] = []
     for path in questctl_logs_for_night(log_dir, night_date):
         for line in _close_code_lines(path):
@@ -86,6 +106,7 @@ def load_questctl_closes(log_dir: Path | None, night_date: str) -> list[datetime
 
 
 def count_questctl_closes_on_night(log_dir: Path | None, night_date: str) -> int:
+    """Count ``CLOSE_CODE`` events on UT night ``night_date``."""
     return len(load_questctl_closes(log_dir, night_date))
 
 
@@ -97,10 +118,12 @@ def find_night_close_from_questctl(
     scheduler_events: list[tuple[float, str]],
 ) -> tuple[float, datetime] | None:
     """
-    Last questctl CLOSE_CODE for this UT night after dome open.
+    Pick the best questctl close for end-of-night reporting.
 
-    Typical path: observer runs closedome → signal to questctl → CLOSE_CODE logged.
-  """
+    Typical path: operator runs ``closedome`` → questctl logs ``CLOSE_CODE``.
+    Prefers the latest close after dome open and (when possible) after the last
+    exposure. Returns ``(ut_decimal, utc_datetime)`` or None.
+    """
     closes = load_questctl_closes(log_dir, night_date)
     if not closes:
         return None

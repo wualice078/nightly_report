@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Parse Schmidt dome open/close events from dome_daemon.log (local Chile time)."""
+"""
+Parse Schmidt dome events from ``dome_daemon.log``.
+
+The dome daemon runs on the mountain and logs local Chile timestamps when the
+Schmidt dome closes (weather guard, sun-up, or operator CLOSE). This module is
+the **fallback** close-time source when questctl and scheduler logs are ambiguous.
+
+Close-time resolution order (see :mod:`build.build_dome_report`):
+
+    1. questctl ``CLOSE_CODE`` (manual ``closedome``)
+    2. scheduler ``dome : closed``
+    3. dome_daemon ``schmidt dome now closed`` (this module)
+"""
 
 from __future__ import annotations
 
@@ -34,6 +46,7 @@ _MONTH = {
 
 
 def _parse_daemon_timestamp(line: str) -> datetime | None:
+    """Parse a syslog-style timestamp from a dome_daemon log line."""
     m = DAEMON_TS.match(line.strip())
     if not m:
         return None
@@ -56,12 +69,18 @@ def _parse_daemon_timestamp(line: str) -> datetime | None:
 
 
 def utc_to_ut_decimal(utc_dt: datetime) -> float:
+    """Convert a UTC datetime to decimal UT hours (0–24, fractional)."""
     u = utc_dt.astimezone(timezone.utc)
     return u.hour + u.minute / 60 + u.second / 3600 + u.microsecond / 3_600_000_000
 
 
 def belongs_to_ut_night(utc_dt: datetime, night_date: str) -> bool:
-    """True if UTC instant falls in the UT observing night labeled night_date."""
+    """
+    Return True if ``utc_dt`` falls in the UT observing night labeled ``night_date``.
+
+    A UT night runs from 12:00 UT on ``night_date`` through ~18:00 UT the next
+    calendar day (matching LS4 scheduler conventions).
+    """
     u = utc_dt.astimezone(timezone.utc)
     d0 = datetime.strptime(night_date, "%Y%m%d").date()
     d1 = d0 + timedelta(days=1)
@@ -75,7 +94,11 @@ def belongs_to_ut_night(utc_dt: datetime, night_date: str) -> bool:
 
 
 def load_dome_daemon_closes(path: Path | None) -> list[datetime]:
-    """Return UTC datetimes of 'schmidt dome now closed' events, in log order."""
+    """
+    Return UTC datetimes of ``schmidt dome now closed`` events, in log order.
+
+    Returns an empty list when ``path`` is missing or unreadable.
+    """
     if path is None or not path.is_file():
         return []
     out: list[datetime] = []
@@ -90,6 +113,7 @@ def load_dome_daemon_closes(path: Path | None) -> list[datetime]:
 
 
 def count_daemon_closes_on_night(daemon_log: Path | None, night_date: str) -> int:
+    """Count dome_daemon closes that belong to UT night ``night_date``."""
     return sum(1 for c in load_dome_daemon_closes(daemon_log) if belongs_to_ut_night(c, night_date))
 
 
@@ -101,9 +125,10 @@ def find_night_close_from_daemon(
     scheduler_events: list[tuple[float, str]],
 ) -> tuple[float, datetime] | None:
     """
-    Last dome_daemon close for this UT night, after first open.
+    Pick the best dome_daemon close for end-of-night reporting.
 
-    Returns (scheduler-style UT decimal hours, UTC datetime).
+    Prefers closes after the last exposure (within 15 minutes). Returns
+    ``(scheduler_style_ut_decimal, utc_datetime)`` or None.
     """
     closes = load_dome_daemon_closes(daemon_log)
     if not closes:
@@ -138,10 +163,10 @@ def find_night_close_from_daemon(
 
 def daemon_close_note(daemon_log: Path | None, close_utc: datetime) -> str:
     """
-    Classify a dome_daemon close for the report.
+    Classify a dome_daemon close for the report narrative.
 
-    Manual end-of-night usually logs 'command is CLOSE' before 'closing schmidt dome'.
-    Weather/safety closes log La Silla domes closed or sun-up conditions.
+    Inspects ~20 lines before the close event for operator CLOSE vs weather/safety
+    keywords (La Silla domes closed, sun up, etc.).
     """
     if daemon_log is None or not daemon_log.is_file():
         return "dome_daemon"

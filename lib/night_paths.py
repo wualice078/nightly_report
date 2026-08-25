@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
-"""Resolve obsplan / log.obs / scheduler log paths for one UT night."""
+"""
+Resolve input file paths for one UT observing night.
+
+Given a UT date label ``YYYYMMDD``, this module finds the obsplan, ``log.obs``,
+scheduler log, and optional auxiliary logs (questctl, dome_daemon, DIMM).
+It supports both **live** mountain data under ``~/data/YYYYMMDD/`` and **practice**
+archives under ``PRACTICE_ROOT``.
+
+Primary entry points:
+
+    :func:`resolve_night_paths` — return a :class:`NightPaths` bundle or raise
+    :func:`get_default_ut_date` — UT night label used when ``--date`` is omitted
+    :func:`discover_live_nights` / :func:`practice_night_list` — batch builders
+"""
 
 from __future__ import annotations
 
@@ -24,6 +37,8 @@ from lib.practice_config import (
 
 @dataclass
 class NightPaths:
+    """All input paths needed to build one night's report."""
+
     date: str
     obsplan: Path
     log_obs: Path
@@ -31,10 +46,11 @@ class NightPaths:
     dome_daemon_log: Path | None
     questctl_log_dir: Path | None
     dimm_log: Path | None
-    source: str
+    source: str  # "live" or "practice"
 
 
 def _is_dir(path: Path) -> bool:
+    """Return True if ``path`` is an existing directory (OSError-safe)."""
     try:
         return path.is_dir()
     except OSError:
@@ -42,6 +58,7 @@ def _is_dir(path: Path) -> bool:
 
 
 def _is_file(path: Path) -> bool:
+    """Return True if ``path`` is an existing regular file (OSError-safe)."""
     try:
         return path.is_file()
     except OSError:
@@ -49,7 +66,7 @@ def _is_file(path: Path) -> bool:
 
 
 def _fallback_ut_date() -> str:
-    """Match observer bin/get_ut_date when that script is unavailable."""
+    """Approximate ``get_ut_date`` when the mountain script is unavailable."""
     now_local = datetime.now()
     if now_local.hour < 8:
         return now_local.strftime("%Y%m%d")
@@ -61,6 +78,12 @@ def _fallback_ut_date() -> str:
 
 
 def get_default_ut_date() -> str:
+    """
+    Return the UT observing-night label for "tonight" or the most recent night.
+
+    Calls ``GET_UT_DATE`` (``~/bin/get_ut_date`` on the mountain) when present;
+    otherwise uses :func:`_fallback_ut_date`.
+    """
     try:
         if _is_file(GET_UT_DATE):
             r = subprocess.run([str(GET_UT_DATE)], capture_output=True, text=True)
@@ -72,10 +95,13 @@ def get_default_ut_date() -> str:
 
 
 def _practice_night_files(date: str) -> tuple[Path, Path, Path] | None:
-    """Obsplan, log.obs, scheduler log for an archived night.
+    """
+    Locate obsplan, log.obs, and scheduler log for an archived practice night.
 
-    Archives come in two shapes: night/log.obs (all_logs) and
-    night/logs/log.obs (2026_recent_logs).
+    Archives come in two layouts:
+
+    * ``night/log.obs`` (``~/all_logs``)
+    * ``night/logs/log.obs`` (``~/2026_recent_logs/obslogs_and_plans``)
     """
     night_dir = PRACTICE_ROOT / date
     for log_dir in (night_dir / "logs", night_dir):
@@ -89,6 +115,7 @@ def _practice_night_files(date: str) -> tuple[Path, Path, Path] | None:
 
 
 def discover_practice_nights() -> list[str]:
+    """Scan ``PRACTICE_ROOT`` for subdirectories that contain a complete night."""
     nights = []
     if not _is_dir(PRACTICE_ROOT):
         return nights
@@ -105,12 +132,14 @@ def discover_practice_nights() -> list[str]:
 
 
 def practice_night_list() -> list[str]:
+    """Return configured practice nights, or discover them under ``PRACTICE_ROOT``."""
     if PRACTICE_NIGHTS:
         return list(PRACTICE_NIGHTS)
     return discover_practice_nights()
 
 
 def _resolve_dimm_log(log_dir: Path) -> Path | None:
+    """Prefer archived ``dimm.logs`` in the night dir, else the live mountain file."""
     for candidate in (log_dir / "dimm.logs", DIMM_LOG):
         if _is_file(candidate):
             return candidate
@@ -126,6 +155,7 @@ def _night_paths(
     questctl_dir: Path | None,
     source: str,
 ) -> NightPaths:
+    """Build a :class:`NightPaths`, omitting optional paths that do not exist."""
     return NightPaths(
         date,
         obsplan,
@@ -139,6 +169,7 @@ def _night_paths(
 
 
 def _practice_paths(date: str) -> NightPaths | None:
+    """Resolve paths from the practice archive for ``date``, or None."""
     found = _practice_night_files(date)
     if not found:
         return None
@@ -149,12 +180,14 @@ def _practice_paths(date: str) -> NightPaths | None:
 
 
 def _obsplan_candidates(date: str, data_root: Path) -> list[Path]:
+    """Possible obsplan locations for a night (data tree and obsplan roots)."""
     names = [data_root / date / f"{date}.obsplan"]
     names.extend(obs_root / date / f"{date}.obsplan" for obs_root in OBSPLAN_ROOTS)
     return names
 
 
 def discover_live_nights() -> list[str]:
+    """List UT dates with live ``log.obs`` and at least one obsplan under configured roots."""
     nights: list[str] = []
     for data_root in LIVE_DATA_ROOTS:
         if not _is_dir(data_root):
@@ -176,6 +209,7 @@ def discover_live_nights() -> list[str]:
 
 
 def _live_paths(date: str) -> NightPaths | None:
+    """Resolve paths from live mountain data trees for ``date``, or None."""
     for data_root in LIVE_DATA_ROOTS:
         live_dir = data_root / date / "logs"
         log_obs = live_dir / "log.obs"
@@ -191,7 +225,11 @@ def _live_paths(date: str) -> NightPaths | None:
 
 
 def diagnose_live_night(date: str) -> str:
-    """Human-readable checklist of what exists for a UT night (for error messages)."""
+    """
+    Human-readable checklist of expected live paths for ``date``.
+
+    Used in :exc:`FileNotFoundError` messages when a night cannot be resolved.
+    """
     lines = [f"night {date}:"]
     for data_root in LIVE_DATA_ROOTS:
         night_dir = data_root / date
@@ -214,6 +252,13 @@ def diagnose_live_night(date: str) -> str:
 
 
 def resolve_night_paths(date: str, *, allow_practice_fallback: bool = True) -> NightPaths:
+    """
+    Resolve all input paths for UT night ``date``.
+
+    Tries live data first. When ``allow_practice_fallback`` is True, falls back to
+    ``PRACTICE_ROOT``. Raises :exc:`FileNotFoundError` with diagnostics when
+    neither source has the required files.
+    """
     paths = _live_paths(date)
     if paths is not None:
         return paths

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Weather section: 30-minute UT grid over the full observing window."""
+"""
+Weather section: 30-minute UT grid over the observing window.
+
+Samples Temp, RH%, wind speed, and wind direction from the scheduler log at
+:class:`lib.weather_samples.GRID_STEP` intervals (30 minutes). The grid spans
+from first dome open / first exposure through last close / last exposure.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +29,12 @@ def build_weather_section(
     exposure_ut: list[float] | None = None,
     **_kwargs,
 ) -> str:
+    """
+    Build the ``=== Weather (30 min UT) ===`` report section.
+
+    ``exposure_ut`` extends the weather window when dome events alone are sparse.
+    Extra keyword arguments are ignored (call-site compatibility with other builders).
+    """
     lines = ["=== Weather (30 min UT) ===", "  UT in hours"]
     weather = load_scheduler_weather(scheduler_log)
     window = night_window(load_dome_events(scheduler_log), weather, exposure_ut or [])

@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Compare nightly obsplan to log.obs (tag + RA/Dec match)."""
+"""
+Compare nightly obsplan to ``log.obs`` (field inventory section).
+
+Matches planned fields to logged exposures by RA/Dec (within tolerance) and
+optional comment tag. Buckets each field as COMPLETE, PARTIAL, or NOT OBSERVED
+based on required vs obtained exposure count.
+
+Also provides :func:`parse_obsplan`, :func:`parse_log_obs`, and
+:func:`field_counts` used by :mod:`build.build_summary`.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +21,8 @@ RADEC_TOL = 0.002
 
 @dataclass
 class PlannedField:
+    """One field line from the nightly obsplan."""
+
     ra: float
     dec: float
     shutter: str
@@ -20,6 +31,11 @@ class PlannedField:
 
 
 def parse_obsplan(path: Path) -> list[PlannedField]:
+    """
+    Parse obsplan lines into :class:`PlannedField` records.
+
+    Skips blank lines, comments, and malformed rows (e.g. hand-edited typos).
+    """
     fields = []
     for i, raw in enumerate(path.read_text().splitlines(), 1):
         line = raw.strip()
@@ -49,15 +65,22 @@ def parse_obsplan(path: Path) -> list[PlannedField]:
 
 
 def parse_log_obs(path: Path) -> list[str]:
+    """Return non-empty stripped lines from ``log.obs``."""
     return [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
 
 
 def is_observing_field(field: PlannedField) -> bool:
-    """Y/S = science; N/E/D/etc. = calibration."""
+    """Return True for science fields (shutter Y/S); False for calibration."""
     return field.shutter.upper() in ("Y", "S")
 
 
 def matches(field: PlannedField, line: str) -> bool:
+    """
+    Return True if a ``log.obs`` line matches a planned field.
+
+    Requires RA/Dec within :data:`RADEC_TOL`. When the obsplan tag is present
+    and not a synthetic ``line_N`` placeholder, the tag must appear in the line.
+    """
     parts = line.split()
     if len(parts) < 2:
         return False
@@ -73,10 +96,12 @@ def matches(field: PlannedField, line: str) -> bool:
 
 
 def count_field(field: PlannedField, log_lines: list[str]) -> int:
+    """Count ``log.obs`` lines that match one planned field."""
     return sum(1 for ln in log_lines if matches(field, ln))
 
 
 def _bucket(fields: list[PlannedField], log_lines: list[str]):
+    """Split fields into complete, partial, and not-observed buckets."""
     complete, partial, none = [], [], []
     for f in fields:
         n = count_field(f, log_lines)
@@ -90,7 +115,11 @@ def _bucket(fields: list[PlannedField], log_lines: list[str]):
 
 
 def field_counts(fields: list[PlannedField], log_lines: list[str]) -> dict[str, int]:
-    """Return planned / complete / partial / not_observed counts."""
+    """
+    Return planned / complete / partial / not_observed counts for a field list.
+
+    Used by the night summary header.
+    """
     complete, partial, none = _bucket(fields, log_lines)
     return {
         "planned": len(fields),
@@ -101,6 +130,7 @@ def field_counts(fields: list[PlannedField], log_lines: list[str]) -> dict[str, 
 
 
 def _field_table(complete, partial, none) -> list[str]:
+    """Format COMPLETE / PARTIAL / NOT OBSERVED tables for the report."""
     header = f"  {'tag':<20}  {'RA':>8}  {'Dec':>9}  got/need"
     lines = [header]
 
@@ -129,6 +159,7 @@ def _field_table(complete, partial, none) -> list[str]:
 
 
 def _fields_block(title: str, fields: list[PlannedField], log_lines: list[str]) -> list[str]:
+    """Build one observing or calibration field block."""
     if not fields:
         return [f"  {title} (0 planned)"]
     c, p, n = _bucket(fields, log_lines)
@@ -136,6 +167,11 @@ def _fields_block(title: str, fields: list[PlannedField], log_lines: list[str]) 
 
 
 def build_fields_section(obsplan: Path, log_obs: Path) -> str:
+    """
+    Build the ``=== Field inventory ===`` report section.
+
+    Compares obsplan vs ``log.obs`` for observing and calibration fields separately.
+    """
     planned = parse_obsplan(obsplan)
     log_lines = parse_log_obs(log_obs)
     obs_fields = [f for f in planned if is_observing_field(f)]
@@ -157,6 +193,7 @@ def build_fields_section(obsplan: Path, log_obs: Path) -> str:
 
 
 def main() -> int:
+    """CLI: compare two files and print or write the field inventory section."""
     p = argparse.ArgumentParser()
     p.add_argument("obsplan", type=Path)
     p.add_argument("log_obs", type=Path)

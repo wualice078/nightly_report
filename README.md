@@ -172,6 +172,23 @@ After a successful **morning** live report, `dimm.logs` is archived to `~/data/Y
 
 ---
 
+## Documentation (Read the Docs)
+
+API and usage docs live under `docs/`. To build locally:
+
+```bash
+pip install -r docs/requirements.txt
+python3 -m sphinx -b html docs docs/_build/html
+# open docs/_build/html/index.html
+```
+
+On [Read the Docs](https://readthedocs.org/), import the GitHub repo and point
+at `.readthedocs.yaml`. RTD installs `docs/requirements.txt` and builds Sphinx
+automatically on each push. The site pulls docstrings from the Python modules
+via autodoc (see `docs/api/index.rst`).
+
+---
+
 ## Repository layout
 
 ```

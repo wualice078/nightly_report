@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Observing and calibration exposure tables from log.obs."""
+"""
+Exposure tables for the nightly report (observing + calibration).
+
+Parses ``log.obs`` into one row per exposure with UT, field tag, RA/Dec, nearest
+scheduler weather sample, DIMM arcsec, and FITS filename stem. Exposures are
+sorted on the continuous night timeline (see :mod:`lib.weather_samples`).
+
+Public helpers:
+
+    :func:`exposure_ut_list` — UT hours for all exposures (used by dome/weather)
+    :func:`build_exposure_section` — full ``=== Exposures ===`` section text
+"""
 
 from __future__ import annotations
 
@@ -20,6 +31,7 @@ EXPOSURE_TOL = 10.0 / 60.0
 
 
 def _fits_token(line: str) -> str | None:
+    """Extract FITS timestamp token from a ``log.obs`` line."""
     m = FITS_RE.search(line)
     if not m:
         return None
@@ -28,6 +40,7 @@ def _fits_token(line: str) -> str | None:
 
 
 def _fits_ut_hours(token: str) -> float | None:
+    """Convert FITS timestamp token to decimal UT hours."""
     m = FITS_RE.search(token)
     if not m:
         return None
@@ -36,11 +49,16 @@ def _fits_ut_hours(token: str) -> float | None:
 
 
 def _is_observing(shutter: str) -> bool:
-    """Y/S = science; N/E/D/etc. = calibration (per obsplan and log.obs conventions)."""
+    """Return True for science exposures (shutter Y/S)."""
     return shutter.upper() in ("Y", "S")
 
 
 def _parse_line(line: str) -> dict | None:
+    """
+    Parse one ``log.obs`` line into exposure metadata.
+
+    Returns None for blank or malformed lines (missing FITS token or columns).
+    """
     parts = line.split()
     if len(parts) < 8:
         return None
@@ -64,6 +82,11 @@ def _parse_line(line: str) -> dict | None:
 
 
 def exposure_ut_list(log_obs: Path) -> list[float]:
+    """
+    Return decimal UT hours for every exposure in ``log.obs``.
+
+    Used by dome and weather sections to align timelines and resolve close times.
+    """
     uts = []
     for line in log_obs.read_text().splitlines():
         row = _parse_line(line.strip())
@@ -79,6 +102,7 @@ def _exposure_table(
     dimm_samples,
     anchor: float,
 ) -> list[str]:
+    """Format a table of exposures with weather and DIMM columns."""
     lines = [title, f"  {'UT(h)':>6}  {'tag':<20}  {'RA':>7}  {'Dec':>7}  "
              f"{'Temp':>4}  {'RH%':>3}  {'Wind':>4}  {'Dir':>4}  {'DIMM':>4}  file"]
     for r in rows:
@@ -104,6 +128,12 @@ def build_exposure_section(
     night_date: str | None = None,
     dimm_log: Path | None = None,
 ) -> str:
+    """
+    Build the ``=== Exposures ===`` report section.
+
+    Splits observing and calibration exposures. Weather comes from the scheduler
+    log; DIMM from ``dimm.logs`` when ``night_date`` and ``dimm_log`` are set.
+    """
     lines = ["=== Exposures ===", f"  log.obs: {log_obs}", "  RA in hours, Dec in degrees"]
     weather = load_scheduler_weather(scheduler_log)
     dimm_samples = load_dimm_samples(dimm_log, night_date) if night_date and dimm_log else []

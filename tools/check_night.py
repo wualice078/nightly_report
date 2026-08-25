@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""One-command night diagnostics (tcsh: python3 ~/nightly_report/tools/check_night.py DATE)."""
+"""
+One-command diagnostics for a single UT observing night.
+
+Prints which input files exist, counts dome closes from questctl / scheduler /
+dome_daemon, and DIMM sample coverage. Intended for mountain troubleshooting::
+
+    python3 tools/check_night.py YYYYMMDD
+"""
 
 from __future__ import annotations
 
@@ -21,6 +28,12 @@ from lib.seeing_samples import load_dimm_samples
 
 
 def main() -> int:
+    """
+    Print diagnostics for UT night ``YYYYMMDD`` from argv.
+
+    Accepts ``--date YYYYMMDD`` for consistency with other entry points.
+    Returns 0 when paths resolve, 1 when inputs are missing.
+    """
     args = sys.argv[1:]
     # Accept "--date YYYYMMDD" too, for consistency with the other entry points.
     if args and args[0] == "--date":

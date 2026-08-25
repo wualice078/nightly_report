@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Dome open/close timeline: questctl (manual) → scheduler → dome_daemon (safety)."""
+"""
+Dome open/close timeline and close-time resolution for the nightly report.
+
+Reads dome state changes from the scheduler log and resolves the authoritative
+**last close** time using this priority:
+
+    1. questctl ``CLOSE_CODE`` (manual ``closedome`` — exact UTC)
+    2. scheduler ``dome : closed`` (after last exposure)
+    3. dome_daemon ``schmidt dome now closed`` (weather/safety fallback)
+
+Public API:
+
+    :class:`DomeSummary` — structured dome statistics for one night
+    :func:`dome_summary` — compute summary from logs
+    :func:`build_dome_section` — formatted ``=== Dome ===`` report text
+"""
 
 from __future__ import annotations
 
@@ -18,6 +33,14 @@ from lib.weather_samples import load_dome_events, night_anchor_ut, to_night_ut
 
 @dataclass(frozen=True)
 class DomeSummary:
+    """
+    Dome statistics for one UT observing night.
+
+    ``last_close_source`` is one of ``questctl``, ``scheduler``, ``dome_daemon``,
+    or None when no close was resolved. ``close_utc`` and ``close_note`` are set
+    when the close came from questctl or dome_daemon.
+    """
+
     first_open: float | None
     last_close: float | None
     total_open_h: float
@@ -34,10 +57,12 @@ class DomeSummary:
 
 
 def _interval_hours(t0: float, t1: float, anchor: float) -> float:
+    """Duration in hours between two UT times on the continuous night timeline."""
     return to_night_ut(t1, anchor) - to_night_ut(t0, anchor)
 
 
 def _total_interval_hours(intervals: list[tuple[float, float]], anchor: float) -> float:
+    """Sum open-interval durations on the night timeline."""
     return sum(_interval_hours(t0, t1, anchor) for t0, t1 in intervals)
 
 
@@ -52,7 +77,12 @@ def _set_close(
     close_utc: datetime | None,
     close_note: str | None,
 ) -> DomeSummary:
-    """Apply a resolved close time (overrides scheduler close when still open or more exact)."""
+    """
+    Apply a resolved close time to dome state.
+
+    Appends or extends the last open interval and marks the dome as closed.
+    Used when questctl or dome_daemon overrides an incomplete scheduler timeline.
+    """
     ivals = list(intervals)
     if open_ut is not None:
         ivals.append((open_ut, close_ut))
@@ -77,7 +107,12 @@ def _set_close(
 
 
 def _is_end_of_night_close(close_ut: float, exposure_ut: list[float], anchor: float) -> bool:
-    """True if close_ut is plausibly end-of-night (after last exposure, not a startup blip)."""
+    """
+    Return True if ``close_ut`` plausibly marks end-of-night.
+
+    Rejects early scheduler closes that occur before the last exposure (startup
+    blips). Allows 15 minutes before last exposure.
+    """
     if not exposure_ut:
         return True
     last_exp = max(to_night_ut(u, anchor) for u in exposure_ut)
@@ -92,6 +127,14 @@ def dome_summary(
     questctl_log_dir: Path | None = None,
     exposure_ut: list[float] | None = None,
 ) -> DomeSummary | None:
+    """
+    Compute dome statistics for one night from available logs.
+
+    Parses scheduler dome events first, then optionally refines ``last_close``
+    using questctl and dome_daemon when ``night_date`` is provided.
+
+    Returns None when no dome-related inputs exist.
+    """
     events = load_dome_events(scheduler_log)
     if not events and not dome_daemon_log and not questctl_log_dir:
         return None
@@ -253,11 +296,13 @@ def dome_summary(
 
 
 def _format_utc(dt: datetime) -> str:
+    """Format a datetime as ``YYYY-MM-DD HH:MM:SS UTC``."""
     u = dt.astimezone(timezone.utc)
     return u.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _resolved_close_lines(summary: DomeSummary) -> list[str]:
+    """Format resolved close time, note, and UTC for the dome section."""
     if summary.last_close is None:
         return []
     lines = [
@@ -278,6 +323,13 @@ def build_dome_section(
     questctl_log_dir: Path | None = None,
     exposure_ut: list[float] | None = None,
 ) -> str:
+    """
+    Build the ``=== Dome ===`` report section.
+
+    Lists scheduler dome events, resolved close time, open intervals, and total
+    open hours. When the dome was still open at log end, explains which close
+    sources were checked.
+    """
     lines = ["=== Dome ===", "  UT in hours"]
     events = load_dome_events(scheduler_log)
     summary = dome_summary(
