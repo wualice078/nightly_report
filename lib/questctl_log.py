@@ -288,6 +288,28 @@ def _shutter_events_on_night(
     return sorted(set(opens)), sorted(set(closes))
 
 
+def load_dome_bit_events_on_night(
+    log_dir: Path | None, night_date: str
+) -> list[tuple[datetime, int]]:
+    """
+    Collapsed shutter-bit changes (0/1/2) on UT night ``night_date``.
+
+    One row per state change, per log file. Files are not interleaved.
+    """
+    out: list[tuple[datetime, int]] = []
+    for path in _questctl_bit_log_paths(log_dir):
+        prev: int | None = None
+        for dt, bit in load_dome_bit_changes_for_file(path):
+            if not belongs_to_ut_night(dt, night_date):
+                continue
+            if bit == prev:
+                continue
+            out.append((dt, bit))
+            prev = bit
+    out.sort(key=lambda x: x[0])
+    return out
+
+
 def load_questctl_shutter_closes(log_dir: Path | None, night_date: str) -> list[datetime]:
     """Return shutter-closed confirmations (``1→0``) on UT night ``night_date``."""
     _opens, closes = _shutter_events_on_night(log_dir, night_date)

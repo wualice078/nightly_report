@@ -24,16 +24,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from lib.dome_daemon import (
+    belongs_to_ut_night,
     count_daemon_closes_on_night,
     daemon_close_note,
     find_night_close_from_daemon,
+    load_dome_daemon_closes,
+    utc_to_ut_decimal,
 )
 from lib.questctl_log import (
     count_questctl_bit_closes_on_night,
     count_questctl_closes_on_night,
     find_night_close_from_dome_bits,
     find_night_close_from_questctl,
-    find_night_open_from_dome_bits,
+    load_dome_bit_events_on_night,
+    load_questctl_closes,
 )
 from lib.weather_samples import load_dome_events, night_anchor_ut, to_night_ut
 
@@ -62,6 +66,8 @@ class DomeSummary:
     questctl_checked: bool = False
     questctl_closes_on_night: int = 0
     questctl_bit_closes_on_night: int = 0
+    # (clock UT hours, action, source) — every logged shutter change, not just the slot
+    actions: tuple[tuple[float, str, str], ...] = ()
 
 
 def _interval_hours(t0: float, t1: float, anchor: float) -> float:
@@ -127,6 +133,73 @@ def _is_end_of_night_close(close_ut: float, exposure_ut: list[float], anchor: fl
     return to_night_ut(close_ut, anchor) >= last_exp - 0.25
 
 
+_BIT_ACTION = {0: "CLOSED", 1: "OPEN", 2: "MOVING"}
+
+
+def collect_dome_actions(
+    scheduler_log: Path | None,
+    *,
+    night_date: str | None,
+    dome_daemon_log: Path | None,
+    questctl_log_dir: Path | None,
+    exposure_ut: list[float],
+) -> tuple[tuple[float, str, str], ...]:
+    """
+    Every dome state change on the night, from all logs, chronological.
+
+    ``action`` is OPEN / CLOSED / MOVING / CLOSE_CODE. ``source`` names the log.
+    Multiple opens and closes in one UT night are all kept.
+    """
+    sched = load_dome_events(scheduler_log)
+    exposure_ut = exposure_ut or []
+    anchor = night_anchor_ut(sched, exposure_ut)
+    rows: list[tuple[float, float, str, str]] = []  # night_ut, clock_ut, action, source
+
+    for ut, state in sched:
+        action = "OPEN" if state == "open" else "CLOSED"
+        rows.append((to_night_ut(ut, anchor), ut, action, "scheduler"))
+
+    if night_date and questctl_log_dir:
+        for dt, bit in load_dome_bit_events_on_night(questctl_log_dir, night_date):
+            ut = utc_to_ut_decimal(dt)
+            action = _BIT_ACTION.get(bit, f"BIT{bit}")
+            rows.append((to_night_ut(ut, anchor), ut, action, "questctl bits"))
+        for dt in load_questctl_closes(questctl_log_dir, night_date):
+            ut = utc_to_ut_decimal(dt)
+            rows.append((to_night_ut(ut, anchor), ut, "CLOSE_CODE", "questctl"))
+
+    if night_date and dome_daemon_log:
+        for dt in load_dome_daemon_closes(dome_daemon_log):
+            if not belongs_to_ut_night(dt, night_date):
+                continue
+            ut = utc_to_ut_decimal(dt)
+            rows.append((to_night_ut(ut, anchor), ut, "CLOSED", "dome_daemon"))
+
+    rows.sort(key=lambda r: (r[0], r[3], r[2]))
+    return tuple((clock, action, source) for _n, clock, action, source in rows)
+
+
+def _observing_slot_open(
+    opens: list[float],
+    exposure_ut: list[float],
+    anchor: float,
+) -> float | None:
+    """
+    Open time for the observing slot (not a short test).
+
+    If there are exposures, use the last OPEN at or before the first exposure.
+    """
+    if not opens:
+        return None
+    if not exposure_ut:
+        return min(opens, key=lambda u: to_night_ut(u, anchor))
+    first_e = min(to_night_ut(u, anchor) for u in exposure_ut)
+    before = [u for u in opens if to_night_ut(u, anchor) <= first_e + 0.25]
+    if before:
+        return max(before, key=lambda u: to_night_ut(u, anchor))
+    return min(opens, key=lambda u: to_night_ut(u, anchor))
+
+
 def dome_summary(
     scheduler_log: Path | None,
     *,
@@ -181,6 +254,7 @@ def dome_summary(
     questctl_checked = False
     questctl_closes_on_night = 0
     questctl_bit_closes_on_night = 0
+    actions: tuple[tuple[float, str, str], ...] = ()
 
     def _with_counts(resolved: DomeSummary) -> DomeSummary:
         return DomeSummary(
@@ -191,27 +265,32 @@ def dome_summary(
                 "questctl_checked": questctl_checked,
                 "questctl_closes_on_night": questctl_closes_on_night,
                 "questctl_bit_closes_on_night": questctl_bit_closes_on_night,
+                "actions": actions,
             }
         )
 
     if not night_date:
         if first_open is None and not intervals and not still_open and scheduler_close is None:
             return None
-        return DomeSummary(
-            first_open=first_open,
-            last_close=end_close,
-            total_open_h=total_h,
-            intervals=intervals,
-            still_open=still_open,
-            open_since=open_ut,
-            last_close_source="scheduler" if end_close is not None else None,
-            daemon_checked=daemon_checked,
-            daemon_closes_on_night=daemon_closes_on_night,
-            questctl_checked=questctl_checked,
-            questctl_closes_on_night=questctl_closes_on_night,
-            questctl_bit_closes_on_night=questctl_bit_closes_on_night,
+        return _with_counts(
+            DomeSummary(
+                first_open=first_open,
+                last_close=end_close,
+                total_open_h=total_h,
+                intervals=intervals,
+                still_open=still_open,
+                open_since=open_ut,
+                last_close_source="scheduler" if end_close is not None else None,
+            )
         )
 
+    actions = collect_dome_actions(
+        scheduler_log,
+        night_date=night_date,
+        dome_daemon_log=dome_daemon_log,
+        questctl_log_dir=questctl_log_dir,
+        exposure_ut=exposure_ut,
+    )
     if questctl_log_dir:
         questctl_checked = questctl_log_dir.is_dir()
         if questctl_checked:
@@ -219,13 +298,18 @@ def dome_summary(
                 questctl_log_dir, night_date
             )
             questctl_closes_on_night = count_questctl_closes_on_night(questctl_log_dir, night_date)
-        bit_open = find_night_open_from_dome_bits(questctl_log_dir, night_date)
-        if first_open is None and bit_open is not None:
-            first_open = bit_open[0]
-            if open_ut is None:
-                open_ut = bit_open[0]
-                still_open = True
-            anchor = night_anchor_ut(events + [(bit_open[0], "open")], exposure_ut)
+
+    slot_open = _observing_slot_open(
+        [ut for ut, act, _src in actions if act == "OPEN"],
+        exposure_ut,
+        anchor,
+    )
+    if slot_open is not None:
+        first_open = slot_open
+        if open_ut is None:
+            open_ut = slot_open
+            still_open = True
+        anchor = night_anchor_ut(events + [(slot_open, "open")], exposure_ut)
 
     # 1) dome_daemon — confirmed closed (weather, sun-up, or operator CLOSE)
     if dome_daemon_log and first_open is not None:
@@ -310,34 +394,28 @@ def dome_summary(
         and not still_open
         and _is_end_of_night_close(scheduler_close, exposure_ut, anchor)
     ):
-        return DomeSummary(
+        return _with_counts(
+            DomeSummary(
+                first_open=first_open,
+                last_close=scheduler_close,
+                total_open_h=total_h,
+                intervals=intervals,
+                still_open=False,
+                open_since=None,
+                last_close_source="scheduler",
+            )
+        )
+
+    return _with_counts(
+        DomeSummary(
             first_open=first_open,
             last_close=scheduler_close,
             total_open_h=total_h,
             intervals=intervals,
-            still_open=False,
-            open_since=None,
-            last_close_source="scheduler",
-            daemon_checked=daemon_checked,
-            daemon_closes_on_night=daemon_closes_on_night,
-            questctl_checked=questctl_checked,
-            questctl_closes_on_night=questctl_closes_on_night,
-            questctl_bit_closes_on_night=questctl_bit_closes_on_night,
+            still_open=still_open,
+            open_since=open_ut,
+            last_close_source="scheduler" if scheduler_close is not None else None,
         )
-
-    return DomeSummary(
-        first_open=first_open,
-        last_close=scheduler_close,
-        total_open_h=total_h,
-        intervals=intervals,
-        still_open=still_open,
-        open_since=open_ut,
-        last_close_source="scheduler" if scheduler_close is not None else None,
-        daemon_checked=daemon_checked,
-        daemon_closes_on_night=daemon_closes_on_night,
-        questctl_checked=questctl_checked,
-        questctl_closes_on_night=questctl_closes_on_night,
-        questctl_bit_closes_on_night=questctl_bit_closes_on_night,
     )
 
 
@@ -352,7 +430,7 @@ def _resolved_close_lines(summary: DomeSummary) -> list[str]:
     if summary.last_close is None:
         return []
     lines = [
-        f"  ** close time (from {summary.last_close_source}): UT {summary.last_close:.5f} h"
+        f"  ** slot end (from {summary.last_close_source}): UT {summary.last_close:.5f} h"
     ]
     if summary.close_note:
         lines.append(f"     {summary.close_note}")
@@ -372,9 +450,8 @@ def build_dome_section(
     """
     Build the ``=== Dome ===`` report section.
 
-    Lists scheduler dome events, resolved close time, open intervals, and total
-    open hours. When the dome was still open at log end, explains which close
-    sources were checked.
+    Lists every dome action from scheduler, questctl bits, CLOSE_CODE, and
+    dome_daemon. The resolved close is the observing-slot end, not a short test.
     """
     lines = ["=== Dome ===", "  UT in hours"]
     events = load_dome_events(scheduler_log)
@@ -397,12 +474,20 @@ def build_dome_section(
     if scheduler_log:
         lines.append(f"  scheduler log: {scheduler_log}")
 
-    if events:
+    if summary and summary.actions:
+        lines.append("  all actions:")
+        lines.append(f"  {'#':>2}  {'UT(h)':>9}  {'event':<10}  source")
+        for i, (ut, action, source) in enumerate(summary.actions, 1):
+            lines.append(f"  {i:02d}  {ut:9.5f}  {action:<10}  {source}")
+    elif events:
         lines.append(f"  {'#':>2}  {'UT(h)':>9}  event")
         for i, (ut, state) in enumerate(events, 1):
             lines.append(f"  {i:02d}  {ut:9.5f}  {state.upper()}")
 
     if summary:
+        lines.append("  observing slot:")
+        if summary.first_open is not None:
+            lines.append(f"    start  UT {summary.first_open:.5f} h")
         lines.extend(_resolved_close_lines(summary))
 
     if summary and summary.intervals:

@@ -172,6 +172,30 @@ def test_dome_summary_accepts_questctl_dir() -> None:
     assert summary.first_open is not None
 
 
+def test_20260603_actions_and_observing_slot() -> None:
+    from build.build_exposure_report import exposure_ut_list
+    from lib.night_paths import resolve_night_paths
+
+    paths = resolve_night_paths("20260603", allow_practice_fallback=True)
+    exp_ut = exposure_ut_list(paths.log_obs)
+    summary = dome_summary(
+        paths.scheduler_log,
+        night_date=paths.date,
+        dome_daemon_log=paths.dome_daemon_log,
+        questctl_log_dir=paths.questctl_log_dir,
+        exposure_ut=exp_ut,
+    )
+    assert summary is not None
+    actions = summary.actions
+    assert any(a == "OPEN" and s == "questctl bits" for _u, a, s in actions)
+    assert any(a == "CLOSED" and s == "questctl bits" for _u, a, s in actions)
+    assert any(a == "OPEN" and s == "scheduler" for _u, a, s in actions)
+    # observing slot is the science open (~22.99), not the 22:00 test
+    assert summary.first_open is not None
+    assert abs(summary.first_open - 22.99194) < 0.01
+    assert summary.last_close is None
+
+
 def main() -> int:
     tests = [
         test_questctl_logs_for_june_night,
@@ -183,6 +207,7 @@ def main() -> int:
         test_find_close_from_synthetic_bit_log,
         test_dome_summary_prefers_bits_over_close_code,
         test_dome_summary_accepts_questctl_dir,
+        test_20260603_actions_and_observing_slot,
     ]
     for t in tests:
         t()

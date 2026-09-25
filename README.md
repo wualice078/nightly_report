@@ -3,7 +3,8 @@
 Builds a text **nightly report** for Schmidt LS4 from obsplan, `log.obs`, scheduler logs, questctl / dome_daemon logs, and ESO DIMM samples.
 
 **Production:** `observer@ls4-workstn:~/nightly_report`  
-**GitHub:** https://github.com/wualice078/nightly_report
+**GitHub:** https://github.com/wualice078/nightly_report  
+**Docs:** https://nightly-report.readthedocs.io/en/latest/
 
 The mountain shell is **tcsh** (`setenv`, `` set VAR = `cmd` ``).
 
@@ -183,10 +184,12 @@ python3 -m sphinx -b html docs docs/_build/html
 # open docs/_build/html/index.html
 ```
 
-On [Read the Docs](https://readthedocs.org/), import the GitHub repo and point
-at `.readthedocs.yaml`. RTD installs `docs/requirements.txt` and builds Sphinx
-automatically on each push. The site pulls docstrings from the Python modules
-via autodoc (see `docs/api/index.rst`).
+Published docs: [https://nightly-report.readthedocs.io/en/latest/](https://nightly-report.readthedocs.io/en/latest/)
+
+The GitHub repo is already imported on Read the Docs (project `nightly-report`).
+Builds use `.readthedocs.yaml`, install `docs/requirements.txt`, and pull
+docstrings via autodoc (`docs/api/index.rst`). A new GitHub push to `master`
+should rebuild the site.
 
 ---
 
