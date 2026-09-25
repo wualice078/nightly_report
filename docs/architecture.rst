@@ -26,9 +26,12 @@ Dome close resolution
 When ``night_date`` is known, ``build_dome_report.dome_summary`` picks the
 last close time in this order:
 
-1. **questctl** — ``CLOSE_CODE`` after manual ``closedome`` (exact UTC)
-2. **scheduler** — ``dome : closed`` after the last exposure
-3. **dome_daemon** — ``schmidt dome now closed`` (weather/safety)
+1. **dome_daemon** — ``schmidt dome now closed`` (confirmed close)
+2. **questctl shutter bits** — TCS ``dome status bit`` ``1→2→0``
+   (``2`` = opening/closing). Usual end-of-night close while questctl is
+   still polling during ``stow_telescope``.
+3. **questctl** — ``CLOSE_CODE`` after manual ``closedome`` (command time)
+4. **scheduler** — ``dome : closed`` after the last exposure
 
 Night timeline
 --------------

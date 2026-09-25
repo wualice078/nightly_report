@@ -21,6 +21,7 @@ from lib.night_paths import diagnose_live_night, resolve_night_paths
 from lib.practice_config import DIMM_LOG, DOME_DAEMON_LOG, QUESTCTL_LOG_DIR
 from lib.questctl_log import (
     load_questctl_closes,
+    load_questctl_shutter_closes,
     questctl_logs_for_night,
     recent_questctl_closes,
 )
@@ -81,6 +82,10 @@ def main() -> int:
                     print(f"  scanning {p.name} ({mb:.0f} MB) ...", flush=True)
             except OSError:
                 pass
+        bit_closes = load_questctl_shutter_closes(qdir, date)
+        print(f"  shutter 1→0 closes for UT night {date}: {len(bit_closes)}")
+        if bit_closes:
+            print(f"  last shutter close UTC: {bit_closes[-1].isoformat()}")
         closes = load_questctl_closes(qdir, date)
         print(f"  CLOSE_CODE signals for UT night {date}: {len(closes)}")
         if closes:

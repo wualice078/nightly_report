@@ -5,9 +5,10 @@ Dome open/close timeline and close-time resolution for the nightly report.
 Reads dome state changes from the scheduler log and resolves the authoritative
 **last close** time using this priority:
 
-    1. questctl ``CLOSE_CODE`` (manual ``closedome`` — exact UTC)
-    2. scheduler ``dome : closed`` (after last exposure)
-    3. dome_daemon ``schmidt dome now closed`` (weather/safety fallback)
+    1. dome_daemon ``schmidt dome now closed`` (confirmed close)
+    2. questctl shutter bit ``1→2→0`` (TCS status; ``2`` is opening/closing)
+    3. questctl ``CLOSE_CODE`` (manual ``closedome``)
+    4. scheduler ``dome : closed`` (after last exposure)
 
 Public API:
 
@@ -27,7 +28,13 @@ from lib.dome_daemon import (
     daemon_close_note,
     find_night_close_from_daemon,
 )
-from lib.questctl_log import count_questctl_closes_on_night, find_night_close_from_questctl
+from lib.questctl_log import (
+    count_questctl_bit_closes_on_night,
+    count_questctl_closes_on_night,
+    find_night_close_from_dome_bits,
+    find_night_close_from_questctl,
+    find_night_open_from_dome_bits,
+)
 from lib.weather_samples import load_dome_events, night_anchor_ut, to_night_ut
 
 
@@ -38,7 +45,7 @@ class DomeSummary:
 
     ``last_close_source`` is one of ``questctl``, ``scheduler``, ``dome_daemon``,
     or None when no close was resolved. ``close_utc`` and ``close_note`` are set
-    when the close came from questctl or dome_daemon.
+    when the close came from questctl (shutter bit or CLOSE_CODE) or dome_daemon.
     """
 
     first_open: float | None
@@ -54,6 +61,7 @@ class DomeSummary:
     daemon_closes_on_night: int = 0
     questctl_checked: bool = False
     questctl_closes_on_night: int = 0
+    questctl_bit_closes_on_night: int = 0
 
 
 def _interval_hours(t0: float, t1: float, anchor: float) -> float:
@@ -131,7 +139,7 @@ def dome_summary(
     Compute dome statistics for one night from available logs.
 
     Parses scheduler dome events first, then optionally refines ``last_close``
-    using questctl and dome_daemon when ``night_date`` is provided.
+    using dome_daemon then questctl when ``night_date`` is provided.
 
     Returns None when no dome-related inputs exist.
     """
@@ -172,31 +180,105 @@ def dome_summary(
     daemon_closes_on_night = 0
     questctl_checked = False
     questctl_closes_on_night = 0
+    questctl_bit_closes_on_night = 0
 
-    summary = DomeSummary(
-        first_open=first_open,
-        last_close=end_close,
-        total_open_h=total_h,
-        intervals=intervals,
-        still_open=still_open,
-        open_since=open_ut,
-        last_close_source="scheduler" if end_close is not None else None,
-        daemon_checked=daemon_checked,
-        daemon_closes_on_night=daemon_closes_on_night,
-        questctl_checked=questctl_checked,
-        questctl_closes_on_night=questctl_closes_on_night,
-    )
+    def _with_counts(resolved: DomeSummary) -> DomeSummary:
+        return DomeSummary(
+            **{
+                **resolved.__dict__,
+                "daemon_checked": daemon_checked,
+                "daemon_closes_on_night": daemon_closes_on_night,
+                "questctl_checked": questctl_checked,
+                "questctl_closes_on_night": questctl_closes_on_night,
+                "questctl_bit_closes_on_night": questctl_bit_closes_on_night,
+            }
+        )
 
-    if first_open is None or not night_date:
+    if not night_date:
         if first_open is None and not intervals and not still_open and scheduler_close is None:
             return None
-        return summary
+        return DomeSummary(
+            first_open=first_open,
+            last_close=end_close,
+            total_open_h=total_h,
+            intervals=intervals,
+            still_open=still_open,
+            open_since=open_ut,
+            last_close_source="scheduler" if end_close is not None else None,
+            daemon_checked=daemon_checked,
+            daemon_closes_on_night=daemon_closes_on_night,
+            questctl_checked=questctl_checked,
+            questctl_closes_on_night=questctl_closes_on_night,
+            questctl_bit_closes_on_night=questctl_bit_closes_on_night,
+        )
 
-    # 1) questctl CLOSE_CODE — usual manual end-of-night (exact unix timestamp)
     if questctl_log_dir:
         questctl_checked = questctl_log_dir.is_dir()
         if questctl_checked:
+            questctl_bit_closes_on_night = count_questctl_bit_closes_on_night(
+                questctl_log_dir, night_date
+            )
             questctl_closes_on_night = count_questctl_closes_on_night(questctl_log_dir, night_date)
+        bit_open = find_night_open_from_dome_bits(questctl_log_dir, night_date)
+        if first_open is None and bit_open is not None:
+            first_open = bit_open[0]
+            if open_ut is None:
+                open_ut = bit_open[0]
+                still_open = True
+            anchor = night_anchor_ut(events + [(bit_open[0], "open")], exposure_ut)
+
+    # 1) dome_daemon — confirmed closed (weather, sun-up, or operator CLOSE)
+    if dome_daemon_log and first_open is not None:
+        daemon_checked = dome_daemon_log.is_file()
+        if daemon_checked:
+            daemon_closes_on_night = count_daemon_closes_on_night(dome_daemon_log, night_date)
+        found = find_night_close_from_daemon(
+            dome_daemon_log,
+            night_date,
+            first_open,
+            exposure_ut,
+            events,
+        )
+        if found:
+            close_ut, close_utc_dt = found
+            return _with_counts(
+                _set_close(
+                    first_open=first_open,
+                    open_ut=open_ut,
+                    intervals=intervals,
+                    close_ut=close_ut,
+                    anchor=anchor,
+                    source="dome_daemon",
+                    close_utc=close_utc_dt,
+                    close_note=daemon_close_note(dome_daemon_log, close_utc_dt),
+                )
+            )
+
+    if questctl_log_dir:
+        # 2) TCS shutter bit 1→2→0 (questctl polling during stow)
+        found = find_night_close_from_dome_bits(
+            questctl_log_dir,
+            night_date,
+            first_open,
+            exposure_ut,
+            events,
+        )
+        if found:
+            close_ut, close_utc_dt = found
+            return _with_counts(
+                _set_close(
+                    first_open=first_open,
+                    open_ut=open_ut,
+                    intervals=intervals,
+                    close_ut=close_ut,
+                    anchor=anchor,
+                    source="questctl",
+                    close_utc=close_utc_dt,
+                    close_note="questctl shutter 1→2→0 (TCS dome status; 2 = opening/closing)",
+                )
+            )
+
+        # 3) CLOSE_CODE — manual closedome
         found = find_night_close_from_questctl(
             questctl_log_dir,
             night_date,
@@ -206,27 +288,23 @@ def dome_summary(
         )
         if found:
             close_ut, close_utc_dt = found
-            resolved = _set_close(
-                first_open=first_open,
-                open_ut=open_ut,
-                intervals=intervals,
-                close_ut=close_ut,
-                anchor=anchor,
-                source="questctl",
-                close_utc=close_utc_dt,
-                close_note="manual end-of-night (questctl CLOSE_CODE / closedome)",
-            )
-            return DomeSummary(
-                **{
-                    **resolved.__dict__,
-                    "daemon_checked": daemon_checked,
-                    "daemon_closes_on_night": daemon_closes_on_night,
-                    "questctl_checked": questctl_checked,
-                    "questctl_closes_on_night": questctl_closes_on_night,
-                }
+            return _with_counts(
+                _set_close(
+                    first_open=first_open,
+                    open_ut=open_ut,
+                    intervals=intervals,
+                    close_ut=close_ut,
+                    anchor=anchor,
+                    source="questctl",
+                    close_utc=close_utc_dt,
+                    close_note="manual end-of-night (questctl CLOSE_CODE / closedome)",
+                )
             )
 
-    # 2) scheduler dome : closed (when TCS status was polled, after last exposure)
+    if first_open is None and not intervals and not still_open and scheduler_close is None:
+        return None
+
+    # 4) scheduler dome : closed (when TCS status was polled, after last exposure)
     if (
         scheduler_close is not None
         and not still_open
@@ -244,41 +322,8 @@ def dome_summary(
             daemon_closes_on_night=daemon_closes_on_night,
             questctl_checked=questctl_checked,
             questctl_closes_on_night=questctl_closes_on_night,
+            questctl_bit_closes_on_night=questctl_bit_closes_on_night,
         )
-
-    # 3) dome_daemon — weather/safety guard (uncommon)
-    if dome_daemon_log:
-        daemon_checked = dome_daemon_log.is_file()
-        if daemon_checked:
-            daemon_closes_on_night = count_daemon_closes_on_night(dome_daemon_log, night_date)
-        found = find_night_close_from_daemon(
-            dome_daemon_log,
-            night_date,
-            first_open,
-            exposure_ut,
-            events,
-        )
-        if found:
-            close_ut, close_utc_dt = found
-            resolved = _set_close(
-                first_open=first_open,
-                open_ut=open_ut,
-                intervals=intervals,
-                close_ut=close_ut,
-                anchor=anchor,
-                source="dome_daemon",
-                close_utc=close_utc_dt,
-                close_note=daemon_close_note(dome_daemon_log, close_utc_dt),
-            )
-            return DomeSummary(
-                **{
-                    **resolved.__dict__,
-                    "daemon_checked": daemon_checked,
-                    "daemon_closes_on_night": daemon_closes_on_night,
-                    "questctl_checked": questctl_checked,
-                    "questctl_closes_on_night": questctl_closes_on_night,
-                }
-            )
 
     return DomeSummary(
         first_open=first_open,
@@ -292,6 +337,7 @@ def dome_summary(
         daemon_closes_on_night=daemon_closes_on_night,
         questctl_checked=questctl_checked,
         questctl_closes_on_night=questctl_closes_on_night,
+        questctl_bit_closes_on_night=questctl_bit_closes_on_night,
     )
 
 
@@ -344,12 +390,12 @@ def build_dome_section(
         lines += ["  (no dome status in scheduler log)", ""]
         return "\n".join(lines) + "\n"
 
+    if dome_daemon_log and dome_daemon_log.is_file():
+        lines.append(f"  dome_daemon log: {dome_daemon_log}  (preferred close time)")
     if questctl_log_dir and questctl_log_dir.is_dir():
-        lines.append(f"  questctl logs: {questctl_log_dir}/questctl.*.log  (primary close time)")
+        lines.append(f"  questctl logs: {questctl_log_dir}/questctl.*.log  (shutter bits / CLOSE_CODE)")
     if scheduler_log:
         lines.append(f"  scheduler log: {scheduler_log}")
-    if dome_daemon_log and dome_daemon_log.is_file():
-        lines.append(f"  dome_daemon log: {dome_daemon_log}  (weather/safety fallback)")
 
     if events:
         lines.append(f"  {'#':>2}  {'UT(h)':>9}  event")
@@ -367,14 +413,18 @@ def build_dome_section(
             lines.append(f"    {i:02d}  {t0:9.5f} - {t1:9.5f}  ({dur:.3f} h)")
     elif summary and summary.still_open and summary.open_since is not None:
         parts = [f"still open from UT {summary.open_since:.5f} h"]
-        if summary.questctl_checked and summary.questctl_closes_on_night == 0:
-            parts.append("no questctl CLOSE_CODE")
-        elif summary.questctl_checked:
-            parts.append(f"questctl {summary.questctl_closes_on_night} CLOSE signal(s) unmatched")
         if summary.daemon_checked and summary.daemon_closes_on_night == 0:
             parts.append("no dome_daemon close")
         elif summary.daemon_checked:
             parts.append(f"dome_daemon {summary.daemon_closes_on_night} unmatched")
+        if summary.questctl_checked and summary.questctl_bit_closes_on_night == 0:
+            parts.append("no questctl shutter 1→0")
+        elif summary.questctl_checked:
+            parts.append(f"questctl {summary.questctl_bit_closes_on_night} shutter close(s) unmatched")
+        if summary.questctl_checked and summary.questctl_closes_on_night == 0:
+            parts.append("no CLOSE_CODE")
+        elif summary.questctl_checked and summary.questctl_closes_on_night:
+            parts.append(f"{summary.questctl_closes_on_night} CLOSE_CODE unmatched")
         lines.append(f"  {'; '.join(parts)}")
     if summary and summary.total_open_h > 0:
         lines.append(f"  total open: {summary.total_open_h:.3f} h ({summary.total_open_h * 60:.1f} min)")

@@ -71,7 +71,8 @@ def build_summary_section(
     Build the ``=== Night summary ===`` report section.
 
     Parameters mirror :func:`build.build_dome_report.dome_summary` so dome close
-    resolution uses questctl → scheduler → dome_daemon in that order.
+    resolution uses dome_daemon → questctl shutter bits → CLOSE_CODE →
+    scheduler.
     """
     planned = parse_obsplan(obsplan)
     log_lines = parse_log_obs(log_obs)
@@ -111,10 +112,14 @@ def build_summary_section(
                 parts.append("no dome_daemon close")
             elif dome.daemon_checked:
                 parts.append(f"dome_daemon {dome.daemon_closes_on_night} unmatched")
-            if dome.questctl_checked and dome.questctl_closes_on_night == 0:
-                parts.append("no questctl CLOSE")
+            if dome.questctl_checked and dome.questctl_bit_closes_on_night == 0:
+                parts.append("no questctl shutter 1→0")
             elif dome.questctl_checked:
-                parts.append(f"questctl {dome.questctl_closes_on_night} unmatched")
+                parts.append(f"questctl {dome.questctl_bit_closes_on_night} shutter close(s) unmatched")
+            if dome.questctl_checked and dome.questctl_closes_on_night == 0:
+                parts.append("no CLOSE_CODE")
+            elif dome.questctl_checked and dome.questctl_closes_on_night:
+                parts.append(f"{dome.questctl_closes_on_night} CLOSE_CODE unmatched")
             lines.append(f"  Dome last close:  n/a ({'; '.join(parts)})")
         if dome.total_open_h > 0:
             lines.append(

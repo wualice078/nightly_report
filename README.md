@@ -25,9 +25,10 @@ Each `report_YYYYMMDD.txt` has five sections:
 
 **Dome close time** (first match wins):
 
-1. `~/logs/questctl.*.log` → `CLOSE_CODE` (manual `closedome`, exact UTC)
-2. Scheduler log → `dome  : closed`
-3. `~/logs/dome_daemon.log` → `schmidt dome now closed` (weather/safety)
+1. `~/logs/dome_daemon.log` → `schmidt dome now closed` (confirmed close)
+2. `~/logs/questctl.*.log` → TCS shutter bit `1 → 2 → 0` (`2` = opening/closing)
+3. `~/logs/questctl.*.log` → `CLOSE_CODE` (manual `closedome`)
+4. Scheduler log → `dome  : closed`
 
 See [examples/report_example.txt](examples/report_example.txt) for layout (abbreviated).
 
@@ -60,8 +61,8 @@ The report reads `~/logs/dimm.logs`. To fill it, add the DIMM block from [`mount
 |------|------|
 | Night data | `~/data/YYYYMMDD/logs/log.obs`, `…/YYYYMMDD.log` |
 | Obsplan | `~/obsplans/YYYYMMDD/YYYYMMDD.obsplan` |
-| Dome close (primary) | `~/logs/questctl.*.log` |
-| Dome close (fallback) | `~/logs/dome_daemon.log` |
+| Dome close (primary) | `~/logs/dome_daemon.log` |
+| Dome close (fallback) | `~/logs/questctl.*.log` |
 | DIMM samples | `~/logs/dimm.logs` |
 | Report output | `~/nightly_report/reports/report_YYYYMMDD.txt` |
 
@@ -109,7 +110,7 @@ set NIGHT = 20260624
 python3 tools/check_night.py $NIGHT
 ```
 
-Shows which input files exist, scheduler `dome:closed` count, questctl `CLOSE_CODE` count, dome_daemon closes, and dimm.logs sample count.
+Shows which input files exist, scheduler `dome:closed` count, questctl shutter `1→0` and `CLOSE_CODE` counts, dome_daemon closes, and dimm.logs sample count.
 
 ### Batch build (Northwestern / testing)
 
@@ -212,7 +213,7 @@ nightly_report/
 | `lib/night_paths.py` | Find obsplan, log.obs, scheduler log, dimm.logs for one night |
 | `lib/practice_config.py` | Paths, email recipient, env defaults |
 | `lib/weather_samples.py` | Parse scheduler weather + dome status lines |
-| `lib/questctl_log.py` | Parse questctl `CLOSE_CODE` timestamps |
+| `lib/questctl_log.py` | Parse questctl shutter bits (`1→2→0`) and `CLOSE_CODE` |
 | `lib/dome_daemon.py` | Parse dome_daemon.log closes |
 | `lib/seeing_samples.py` | Load dimm.logs; nearest match per exposure |
 | `tools/check_night.py` | One-night diagnostics |
@@ -232,7 +233,7 @@ Set by `cron_morning.sh` on the mountain unless overridden.
 | `LS4_DATA_ROOT` | `/home/observer/data:…` | Night data directories |
 | `LS4_OBSPLAN_ROOT` | `/home/observer/obsplans:…` | Obsplan directories |
 | `LS4_QUESTCTL_LOG_DIR` | `$LS4_ROOT/logs` | questctl.*.log |
-| `LS4_DOME_DAEMON_LOG` | `$LS4_ROOT/logs/dome_daemon.log` | dome_daemon fallback |
+| `LS4_DOME_DAEMON_LOG` | `$LS4_ROOT/logs/dome_daemon.log` | dome_daemon (preferred close) |
 | `LS4_DIMM_LOG` | `$LS4_ROOT/logs/dimm.logs` | Live DIMM samples |
 | `LS4_LIVE_ONLY` | `1` | Skip practice fallback |
 | `LS4_PYTHON` | auto | Python for cron |
@@ -249,7 +250,7 @@ Set by `cron_morning.sh` on the mountain unless overridden.
 
 | Symptom | Check |
 |---------|--------|
-| No dome close | `python3 tools/check_night.py YYYYMMDD` — look for `CLOSE_CODE signals for UT night …: N` (not bare `grep \| tail`, which mixes nights). Questctl scans **all** `~/logs/questctl.*.log` files (long-running logs keep the start date in the filename). |
+| No dome close | `python3 tools/check_night.py YYYYMMDD` — look for shutter `1→0` and `CLOSE_CODE` counts for that UT night (not bare `grep \| tail`, which mixes nights). Questctl scans **all** `~/logs/questctl.*.log` files (long-running logs keep the start date in the filename). |
 | DIMM all `n/a` | `tail ~/logs/dimm.logs` — add DIMM block to `ntt_dome_status` (see Deploy) |
 | Missing night data | `ls ~/data/YYYYMMDD/logs/log.obs` |
 | Wrong user | Run as **observer**, not `ls4` |

@@ -4,13 +4,15 @@ Parse Schmidt dome events from ``dome_daemon.log``.
 
 The dome daemon runs on the mountain and logs local Chile timestamps when the
 Schmidt dome closes (weather guard, sun-up, or operator CLOSE). This module is
-the **fallback** close-time source when questctl and scheduler logs are ambiguous.
+the **preferred** close-time source: it logs when the shutter is actually
+closed (weather guard, sun-up, or operator CLOSE).
 
 Close-time resolution order (see :mod:`build.build_dome_report`):
 
-    1. questctl ``CLOSE_CODE`` (manual ``closedome``)
-    2. scheduler ``dome : closed``
-    3. dome_daemon ``schmidt dome now closed`` (this module)
+    1. dome_daemon ``schmidt dome now closed`` (this module)
+    2. questctl shutter bit ``1→2→0``
+    3. questctl ``CLOSE_CODE`` (manual ``closedome``)
+    4. scheduler ``dome : closed``
 """
 
 from __future__ import annotations
