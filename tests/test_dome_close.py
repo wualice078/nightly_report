@@ -24,7 +24,7 @@ def main() -> int:
 
     nights = discover_live_nights()
     if not nights:
-        print("No nights found (need log.obs + obsplan).")
+        print("No nights found (need log.obs, scheduler log, or obsplan).")
         return 1
 
     print(f"Nights with data ({len(nights)}): {', '.join(nights[-10:])}")

@@ -81,13 +81,16 @@ def _parse_line(line: str) -> dict | None:
     }
 
 
-def exposure_ut_list(log_obs: Path) -> list[float]:
+def exposure_ut_list(log_obs: Path | None) -> list[float]:
     """
     Return decimal UT hours for every exposure in ``log.obs``.
 
     Used by dome and weather sections to align timelines and resolve close times.
+    Empty when ``log_obs`` is None.
     """
     uts = []
+    if log_obs is None:
+        return uts
     for line in log_obs.read_text().splitlines():
         row = _parse_line(line.strip())
         if row:
@@ -122,7 +125,7 @@ def _exposure_table(
 
 
 def build_exposure_section(
-    log_obs: Path,
+    log_obs: Path | None,
     scheduler_log: Path | None,
     *,
     night_date: str | None = None,
@@ -134,6 +137,8 @@ def build_exposure_section(
     Splits observing and calibration exposures. Weather comes from the scheduler
     log; DIMM from ``dimm.logs`` when ``night_date`` and ``dimm_log`` are set.
     """
+    if log_obs is None:
+        return "=== Exposures ===\n  log.obs: (not found — no exposures listed)\n\n"
     lines = ["=== Exposures ===", f"  log.obs: {log_obs}", "  RA in hours, Dec in degrees"]
     weather = load_scheduler_weather(scheduler_log)
     dimm_samples = load_dimm_samples(dimm_log, night_date) if night_date and dimm_log else []

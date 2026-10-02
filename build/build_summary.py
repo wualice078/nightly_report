@@ -58,8 +58,8 @@ def _close_source_label(source: str | None, note: str | None) -> str:
 
 
 def build_summary_section(
-    obsplan: Path,
-    log_obs: Path,
+    obsplan: Path | None,
+    log_obs: Path | None,
     scheduler_log: Path | None,
     *,
     night_date: str | None = None,
@@ -79,14 +79,20 @@ def build_summary_section(
     obs = field_counts([f for f in planned if is_observing_field(f)], log_lines)
     cal = field_counts([f for f in planned if not is_observing_field(f)], log_lines)
 
-    lines = [
-        "=== Night summary ===",
-        _format_field_line("Observing fields", obs),
-        f"    ({obs['complete'] + obs['partial']} with at least one exposure)",
-        _format_field_line("Calibration fields", cal),
-        f"    ({cal['complete'] + cal['partial']} with at least one exposure)",
-        f"  Exposures in log: {len(log_lines)}",
-    ]
+    lines = ["=== Night summary ==="]
+    if obsplan is None:
+        lines.append("  Fields: n/a (no obsplan)")
+    else:
+        lines += [
+            _format_field_line("Observing fields", obs),
+            f"    ({obs['complete'] + obs['partial']} with at least one exposure)",
+            _format_field_line("Calibration fields", cal),
+            f"    ({cal['complete'] + cal['partial']} with at least one exposure)",
+        ]
+    if log_obs is None:
+        lines.append("  Exposures in log: n/a (no log.obs)")
+    else:
+        lines.append(f"  Exposures in log: {len(log_lines)}")
 
     dome = dome_summary(
         scheduler_log,

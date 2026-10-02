@@ -50,7 +50,7 @@ from lib.seeing_samples import archive_and_clear_dimm_log
 
 def build_missing_report(date: str, error: str) -> str:
     """
-    Build a minimal report when required input files are missing.
+    Build a minimal report when no log.obs, scheduler log, or obsplan exists.
 
     Used on the mountain when ``--no-practice-fallback`` is set and live data
     for ``date`` is not yet available.
@@ -172,7 +172,7 @@ def main() -> int:
             and paths.source == "live"
         )
         if cleanup:
-            archive = paths.log_obs.parent / "dimm.logs"
+            archive = paths.log_dir / "dimm.logs"
             try:
                 n = archive_and_clear_dimm_log(DIMM_LOG, paths.date, archive)
                 print(f"Cleared dimm.logs ({n} samples archived to {archive})")

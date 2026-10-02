@@ -40,8 +40,9 @@ class NightPaths:
     """All input paths needed to build one night's report."""
 
     date: str
-    obsplan: Path
-    log_obs: Path
+    log_dir: Path
+    obsplan: Path | None
+    log_obs: Path | None
     scheduler_log: Path | None
     dome_daemon_log: Path | None
     questctl_log_dir: Path | None
@@ -94,24 +95,36 @@ def get_default_ut_date() -> str:
     return _fallback_ut_date()
 
 
-def _practice_night_files(date: str) -> tuple[Path, Path, Path] | None:
+def _first_file(candidates) -> Path | None:
+    """Return the first existing file among ``candidates``, or None."""
+    for p in candidates:
+        if _is_file(p):
+            return p
+    return None
+
+
+def _practice_night_files(date: str) -> tuple[Path, Path | None, Path | None, Path | None] | None:
     """
-    Locate obsplan, log.obs, and scheduler log for an archived practice night.
+    Locate the log dir, obsplan, log.obs, and scheduler log for a practice night.
 
     Archives come in two layouts:
 
     * ``night/log.obs`` (``~/all_logs``)
     * ``night/logs/log.obs`` (``~/2026_recent_logs/obslogs_and_plans``)
+
+    Any of the three files may be missing; returns None only when all are.
     """
     night_dir = PRACTICE_ROOT / date
+    obsplan_only = None
     for log_dir in (night_dir / "logs", night_dir):
-        log_obs = log_dir / "log.obs"
-        if not _is_file(log_obs):
-            continue
-        for obsplan in (night_dir / f"{date}.obsplan", log_dir / f"{date}.obsplan"):
-            if _is_file(obsplan):
-                return obsplan, log_obs, log_dir / f"{date}.log"
-    return None
+        log_obs = _first_file([log_dir / "log.obs"])
+        sched = _first_file([log_dir / f"{date}.log"])
+        obsplan = _first_file([night_dir / f"{date}.obsplan", log_dir / f"{date}.obsplan"])
+        if log_obs or sched:
+            return log_dir, obsplan, log_obs, sched
+        if obsplan and obsplan_only is None:
+            obsplan_only = (log_dir, obsplan, None, None)
+    return obsplan_only
 
 
 def discover_practice_nights() -> list[str]:
@@ -148,9 +161,10 @@ def _resolve_dimm_log(log_dir: Path) -> Path | None:
 
 def _night_paths(
     date: str,
-    obsplan: Path,
-    log_obs: Path,
-    sched: Path,
+    log_dir: Path,
+    obsplan: Path | None,
+    log_obs: Path | None,
+    sched: Path | None,
     daemon: Path | None,
     questctl_dir: Path | None,
     source: str,
@@ -158,12 +172,13 @@ def _night_paths(
     """Build a :class:`NightPaths`, omitting optional paths that do not exist."""
     return NightPaths(
         date,
+        log_dir,
         obsplan,
         log_obs,
-        sched if _is_file(sched) else None,
+        sched,
         daemon if daemon and _is_file(daemon) else None,
         questctl_dir if questctl_dir and _is_dir(questctl_dir) else None,
-        _resolve_dimm_log(log_obs.parent),
+        _resolve_dimm_log(log_dir),
         source,
     )
 
@@ -173,9 +188,10 @@ def _practice_paths(date: str) -> NightPaths | None:
     found = _practice_night_files(date)
     if not found:
         return None
-    obsplan, log_obs, sched = found
+    log_dir, obsplan, log_obs, sched = found
     return _night_paths(
-        date, obsplan, log_obs, sched, PRACTICE_DOME_DAEMON_LOG, PRACTICE_QUESTCTL_LOG_DIR, "practice"
+        date, log_dir, obsplan, log_obs, sched,
+        PRACTICE_DOME_DAEMON_LOG, PRACTICE_QUESTCTL_LOG_DIR, "practice",
     )
 
 
@@ -187,7 +203,7 @@ def _obsplan_candidates(date: str, data_root: Path) -> list[Path]:
 
 
 def discover_live_nights() -> list[str]:
-    """List UT dates with live ``log.obs`` and at least one obsplan under configured roots."""
+    """List UT dates with any live night input (log.obs, scheduler log, or obsplan)."""
     nights: list[str] = []
     for data_root in LIVE_DATA_ROOTS:
         if not _is_dir(data_root):
@@ -199,29 +215,43 @@ def discover_live_nights() -> list[str]:
         for d in entries:
             if not _is_dir(d) or len(d.name) != 8 or not d.name.isdigit():
                 continue
-            date = d.name
-            log_obs = d / "logs" / "log.obs"
-            if not _is_file(log_obs):
-                continue
-            if any(_is_file(p) for p in _obsplan_candidates(date, data_root)):
-                nights.append(date)
+            if _live_files(d.name, data_root):
+                nights.append(d.name)
     return sorted(set(nights))
 
 
-def _live_paths(date: str) -> NightPaths | None:
-    """Resolve paths from live mountain data trees for ``date``, or None."""
-    for data_root in LIVE_DATA_ROOTS:
-        live_dir = data_root / date / "logs"
-        log_obs = live_dir / "log.obs"
-        if not _is_file(log_obs):
-            continue
-        for obsplan in _obsplan_candidates(date, data_root):
-            if not _is_file(obsplan):
-                continue
-            return _night_paths(
-                date, obsplan, log_obs, live_dir / f"{date}.log", DOME_DAEMON_LOG, QUESTCTL_LOG_DIR, "live"
-            )
+def _live_files(date: str, data_root: Path) -> tuple[Path | None, Path | None, Path | None] | None:
+    """Return ``(obsplan, log_obs, sched)`` under one data root, or None if all are missing."""
+    live_dir = data_root / date / "logs"
+    log_obs = _first_file([live_dir / "log.obs"])
+    sched = _first_file([live_dir / f"{date}.log"])
+    obsplan = _first_file(_obsplan_candidates(date, data_root))
+    if log_obs or sched or obsplan:
+        return obsplan, log_obs, sched
     return None
+
+
+def _live_paths(date: str) -> NightPaths | None:
+    """
+    Resolve paths from live mountain data trees for ``date``, or None.
+
+    A data root with log.obs or a scheduler log wins over one that only
+    matched an obsplan (obsplan roots are shared by every data root).
+    """
+    hits = []
+    for data_root in LIVE_DATA_ROOTS:
+        found = _live_files(date, data_root)
+        if found:
+            hits.append((data_root, found))
+    if not hits:
+        return None
+    data_root, (obsplan, log_obs, sched) = next(
+        (h for h in hits if h[1][1] or h[1][2]), hits[0]
+    )
+    return _night_paths(
+        date, data_root / date / "logs", obsplan, log_obs, sched,
+        DOME_DAEMON_LOG, QUESTCTL_LOG_DIR, "live",
+    )
 
 
 def diagnose_live_night(date: str) -> str:
@@ -237,9 +267,9 @@ def diagnose_live_night(date: str) -> str:
         sched = night_dir / "logs" / f"{date}.log"
         lines.append(f"  data tree {data_root}:")
         lines.append(f"    {night_dir}/  {'exists' if _is_dir(night_dir) else 'MISSING'}")
-        lines.append(f"    {log_obs}  {'OK' if _is_file(log_obs) else 'MISSING (required)'}")
-        lines.append(f"    {sched}  {'OK' if _is_file(sched) else 'missing (dome/weather need this)'}")
-    lines.append("  obsplan (need one):")
+        lines.append(f"    {log_obs}  {'OK' if _is_file(log_obs) else 'MISSING'}")
+        lines.append(f"    {sched}  {'OK' if _is_file(sched) else 'MISSING'}")
+    lines.append("  obsplan:")
     seen: set[str] = set()
     for data_root in LIVE_DATA_ROOTS:
         for obsplan in _obsplan_candidates(date, data_root):
@@ -256,8 +286,9 @@ def resolve_night_paths(date: str, *, allow_practice_fallback: bool = True) -> N
     Resolve all input paths for UT night ``date``.
 
     Tries live data first. When ``allow_practice_fallback`` is True, falls back to
-    ``PRACTICE_ROOT``. Raises :exc:`FileNotFoundError` with diagnostics when
-    neither source has the required files.
+    ``PRACTICE_ROOT``. A night resolves when any of log.obs, the scheduler log,
+    or the obsplan exists; the rest are None. Raises :exc:`FileNotFoundError`
+    with diagnostics when none of them exist.
     """
     paths = _live_paths(date)
     if paths is not None:
@@ -265,8 +296,8 @@ def resolve_night_paths(date: str, *, allow_practice_fallback: bool = True) -> N
 
     if not allow_practice_fallback:
         raise FileNotFoundError(
-            f"no live logs for {date} under {LIVE_DATA_ROOTS} "
-            f"with obsplan under {OBSPLAN_ROOTS}\n"
+            f"no log.obs, scheduler log, or obsplan for {date} under {LIVE_DATA_ROOTS} "
+            f"or {OBSPLAN_ROOTS}\n"
             f"{diagnose_live_night(date)}"
         )
 
@@ -275,5 +306,5 @@ def resolve_night_paths(date: str, *, allow_practice_fallback: bool = True) -> N
         return paths
     raise FileNotFoundError(
         f"no logs for night {date}. Expected live data or "
-        f"{PRACTICE_ROOT}/{date}/ with obsplan and log.obs (in the night dir or logs/)"
+        f"{PRACTICE_ROOT}/{date}/ with log.obs, {date}.log, or {date}.obsplan"
     )

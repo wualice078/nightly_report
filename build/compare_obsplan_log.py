@@ -30,13 +30,16 @@ class PlannedField:
     tag: str
 
 
-def parse_obsplan(path: Path) -> list[PlannedField]:
+def parse_obsplan(path: Path | None) -> list[PlannedField]:
     """
     Parse obsplan lines into :class:`PlannedField` records.
 
     Skips blank lines, comments, and malformed rows (e.g. hand-edited typos).
+    Returns an empty list when ``path`` is None.
     """
     fields = []
+    if path is None:
+        return fields
     for i, raw in enumerate(path.read_text().splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -64,8 +67,10 @@ def parse_obsplan(path: Path) -> list[PlannedField]:
     return fields
 
 
-def parse_log_obs(path: Path) -> list[str]:
-    """Return non-empty stripped lines from ``log.obs``."""
+def parse_log_obs(path: Path | None) -> list[str]:
+    """Return non-empty stripped lines from ``log.obs`` (empty when ``path`` is None)."""
+    if path is None:
+        return []
     return [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
 
 
@@ -166,11 +171,12 @@ def _fields_block(title: str, fields: list[PlannedField], log_lines: list[str]) 
     return [f"  {title} ({len(fields)} planned)"] + _field_table(c, p, n)
 
 
-def build_fields_section(obsplan: Path, log_obs: Path) -> str:
+def build_fields_section(obsplan: Path | None, log_obs: Path | None) -> str:
     """
     Build the ``=== Field inventory ===`` report section.
 
     Compares obsplan vs ``log.obs`` for observing and calibration fields separately.
+    Without an obsplan there is nothing to compare, so only a note is printed.
     """
     planned = parse_obsplan(obsplan)
     log_lines = parse_log_obs(log_obs)
@@ -179,8 +185,13 @@ def build_fields_section(obsplan: Path, log_obs: Path) -> str:
 
     lines = [
         "=== Field inventory (obsplan vs log.obs) ===",
-        f"  obsplan: {obsplan}",
-        f"  log.obs: {log_obs}",
+        f"  obsplan: {obsplan or '(not found)'}",
+        f"  log.obs: {log_obs or '(not found)'}",
+    ]
+    if obsplan is None:
+        lines += ["  (no obsplan — field inventory skipped)", ""]
+        return "\n".join(lines)
+    lines += [
         f"  planned: {len(planned)}  exposures in log: {len(log_lines)}",
         "  RA in hours, Dec in degrees",
         "",
