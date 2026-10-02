@@ -20,6 +20,43 @@ Data flow
            ├── build/build_dome_report.py      dome timeline + close resolution
            └── build/build_weather_report.py   30-min weather grid
 
+Input logs
+----------
+
+All per-night files live in ``~/data/YYYYMMDD/logs/`` on the mountain.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 30 45
+
+   * - File
+     - Written by
+     - If missing
+   * - ``YYYYMMDD.log`` (scheduler log)
+     - ``~/scheduler/bin/scheduler``, started by ``obs_control_script``
+       with its output redirected to this file
+     - No weather; dome times come from dome_daemon / questctl only
+   * - ``log.obs``
+     - scheduler
+     - Exposures section is skipped; summary shows ``n/a``
+   * - ``YYYYMMDD.obsplan``
+     - copied in by ``obs_control_script``
+     - Field inventory is skipped; summary shows ``n/a``
+   * - ``dimm.logs``
+     - ``ntt_dome_status`` (archived here by the morning run)
+     - DIMM column shows ``n/a``
+   * - ``dome_daemon.log``, ``questctl.*.log``
+     - dome_daemon, questctl (in ``~/logs``)
+     - Dome close falls back to the scheduler log
+
+The report is built if **any** of the scheduler log, ``log.obs``, or obsplan
+exists. Only when all three are missing does it write a short
+``Status: DATA MISSING`` report.
+
+The weather grid normally spans the observing window (first open / exposure to
+last close / exposure). If there is no window, e.g. the dome stayed shut for
+weather, it shows every weather sample in the scheduler log instead.
+
 Dome close resolution
 ---------------------
 
