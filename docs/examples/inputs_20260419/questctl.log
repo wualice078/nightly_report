@@ -1,0 +1,4 @@
+/home/observer/bin/questctl: checking telescope status 1780355884
+dome status bit is 2
+dome status bit is 0
+/home/observer/bin/questctl: signal code has been set to CLOSE_CODE 1780364112

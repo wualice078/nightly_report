@@ -11,34 +11,41 @@ Full output for UT night **20260419**, an archived practice night from
 Input logs
 ----------
 
-On the mountain these live in ``~/data/20260419/logs/``. For this practice
-night they come from ``~/all_logs/20260419/``.
+Each log the report reads, where it was found for this night, and where it
+lives on the mountain.
 
 .. list-table::
    :header-rows: 1
-   :widths: 22 22 56
+   :widths: 20 30 25 25
 
-   * - File
-     - Written by
+   * - Log
+     - Path used for this example
+     - Path on the mountain
      - Used for
-   * - ``20260419.obsplan``
-     - survey team; ``grab_obsplan.csh`` fetches it, ``obs_control_script`` copies it in
+   * - obsplan
+     - ``~/all_logs/20260419/20260419.obsplan``
+     - ``~/data/20260419/logs/20260419.obsplan``
      - Planned fields: summary counts and field inventory
-   * - ``log.obs``
-     - scheduler
+   * - log.obs
+     - ``~/all_logs/20260419/log.obs``
+     - ``~/data/20260419/logs/log.obs``
      - One line per exposure: exposures table, field inventory
-   * - ``20260419.log`` (scheduler log)
-     - scheduler (``~/scheduler/bin/scheduler``)
+   * - Scheduler log
+     - ``~/all_logs/20260419/20260419.log``
+     - ``~/data/20260419/logs/20260419.log``
      - Dome open/closed and weather (Temp, RH, wind)
-   * - ``dimm.logs``
-     - ``ntt_dome_status``
-     - DIMM seeing column (no samples for this night)
-   * - ``dome_daemon.log``
-     - ``dome_daemon``
-     - Preferred dome close time (no entries for this night)
-   * - ``questctl.*.log``
-     - ``questctl``
-     - Dome close from shutter bits / CLOSE_CODE (no entries for this night)
+   * - dimm.logs
+     - ``~/logs/dimm.logs`` (no samples for this night)
+     - ``~/data/20260419/logs/dimm.logs`` (archived each morning from ``~/logs/dimm.logs``)
+     - DIMM seeing column
+   * - dome_daemon log
+     - ``~/recent_logs/logfiles/dome_daemon.log`` (no entries for this night)
+     - ``~/logs/dome_daemon.log``
+     - Preferred dome close time
+   * - questctl logs
+     - ``~/recent_logs/logfiles/questctl.*.log`` (no entries for this night)
+     - ``~/logs/questctl.*.log``
+     - Dome close from shutter bits or CLOSE_CODE
 
 obsplan
 ~~~~~~~
@@ -49,6 +56,7 @@ needed), and the tag after ``#``.
 
 .. literalinclude:: examples/inputs_20260419/20260419.obsplan
    :language: text
+   :caption: ~/all_logs/20260419/20260419.obsplan
 
 log.obs
 ~~~~~~~
@@ -58,6 +66,7 @@ First 4 of 22 lines. The report reads RA, Dec, shutter, the FITS timestamp
 
 .. literalinclude:: examples/inputs_20260419/log.obs
    :language: text
+   :caption: ~/all_logs/20260419/log.obs (lines 1–4)
 
 Scheduler log
 ~~~~~~~~~~~~~
@@ -70,6 +79,7 @@ and weather tables.
 
 .. literalinclude:: examples/inputs_20260419/20260419.log
    :language: text
+   :caption: ~/all_logs/20260419/20260419.log (lines 297, 3001, 5679)
 
 dimm.logs
 ~~~~~~~~~
@@ -80,6 +90,29 @@ night):
 
 .. literalinclude:: examples/inputs_20260419/dimm.logs
    :language: text
+   :caption: ~/logs/dimm.logs (lines 1–3, June 24)
+
+dome_daemon log
+~~~~~~~~~~~~~~~
+
+No entries for this night, so the close time came from the scheduler log. For
+reference, this is a close the report would use (local time, from June 1):
+
+.. literalinclude:: examples/inputs_20260419/dome_daemon.log
+   :language: text
+   :caption: ~/recent_logs/logfiles/dome_daemon.log (lines 2613, 2616)
+
+questctl logs
+~~~~~~~~~~~~~
+
+No entries for this night. For reference, the report reads the shutter bit
+after each status check (``0`` closed, ``1`` open, ``2`` moving; the number
+after ``status`` is the Unix time) and ``CLOSE_CODE`` lines from a manual
+``closedome`` (from June 1, not consecutive lines):
+
+.. literalinclude:: examples/inputs_20260419/questctl.log
+   :language: text
+   :caption: ~/recent_logs/logfiles/questctl.20260601181324.log (excerpt)
 
 Report
 ------
@@ -90,3 +123,4 @@ lines before about 3.0 h UT.
 
 .. literalinclude:: examples/report_20260419.txt
    :language: text
+   :caption: reports/report_20260419.txt
