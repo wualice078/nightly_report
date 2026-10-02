@@ -119,22 +119,41 @@ if ( $dt > $DATE_TOLERANCE ) then
    exit
 endif
 
-# ESO DIMM seeing for nightly report — append to logs/dimm.logs (stdout unchanged).
+#
+# download latest ESO seeing from the La Silla web site for the nightly report.
+# dimm.last is one line, e.g. "2026-07-14T10:38:42: Current seeing=1.085"
+#
+set dimm_file = "dimm.last"
 set dimm_url = "https://www.ls.eso.org/lasilla/dimm/dimm.last"
-if ($?LS4_ESO_DIMM_URL) set dimm_url = "$LS4_ESO_DIMM_URL"
-set dimm_tmp = "/tmp/eso_dimm_${$}.tmp"
-curl -sk --max-time 15 -o $dimm_tmp "$dimm_url" >& /dev/null
-if ( $status == 0 && -s $dimm_tmp ) then
-   set dimm_line = `cat $dimm_tmp`
-   set dimm_arcsec = `echo "$dimm_line" | sed -n 's/.*[Ss]eeing=\([0-9.][0-9.]*\).*/\1/p'`
-   if ( "$dimm_arcsec" == "" ) set dimm_arcsec = `echo "$dimm_line" | awk '{print $1}'`
-   set dimm_ok = `echo "$dimm_arcsec" | awk '{ if ($1 > 0 && $1 < 10) print "ok" }'`
-   if ( "$dimm_ok" == "ok" ) then
-      set dimm_stamp = `date -u +"%Y-%m-%dT%H:%M:%SZ"`
-      echo "$dimm_stamp $dimm_arcsec" >>! "$LS4_ROOT/logs/dimm.logs"
+if ( -e $dimm_file ) rm $dimm_file
+wget --timeout 3 -O $dimm_file $dimm_url >>& $weather_file
+#
+# if the seeing reading is no older than DATE_TOLERANCE, append its time
+# and value to dimm.logs. Old readings are skipped. Nothing is printed, so
+# the status line below is unchanged.
+#
+if ( -s $dimm_file ) then
+   set l = `cat $dimm_file`
+   set c = `echo $l[1] | cut -c 11-11`
+   if ( $#l == 3 && $c == "T" ) then
+      set date1 = `echo $l[1] | cut -c 1-19`
+      set seeing = `echo $l[3] | cut -d= -f2`
+      set year1 = `echo $date1 | cut -c 1-4`
+      set month1 = `echo $date1 | cut -c 6-7`
+      set day1 = `echo $date1 | cut -c 9-10`
+      set hour1 = `echo $date1 | cut -c 12-13`
+      set minute1 = `echo $date1 | cut -c 15-16`
+      set second1 = `echo $date1 | cut -c 18-19`
+      set t1 = `$DATE_TO_TIME_PROGRAM $year1 $month1 $day1 $hour1 $minute1 $second1`
+      @ dt = $t - $t1
+      if ( $dt < 0 ) then
+         @ dt = $t1 - $t
+      endif
+      if ( $dt <= $DATE_TOLERANCE ) then
+         echo $date1"Z "$seeing >>! dimm.logs
+      endif
    endif
 endif
-rm -f $dimm_tmp
 
 if ( $ntt_status == "OPEN" && $twoptwo_status == "OPEN" ) then
   echo "$date $weather_state $OPEN"
