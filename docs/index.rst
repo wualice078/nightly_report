@@ -9,6 +9,7 @@ logs, questctl / dome_daemon logs, and ESO DIMM samples.
    :caption: Contents
 
    usage
+   example_report
    architecture
    api/index
 
