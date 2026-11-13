@@ -18,6 +18,7 @@ import re
 from pathlib import Path
 
 from lib.seeing_samples import dimm_for_exposure, load_dimm_samples
+from lib.text_table import format_table
 from lib.weather_samples import (
     load_dome_events,
     load_scheduler_weather,
@@ -106,22 +107,36 @@ def _exposure_table(
     anchor: float,
 ) -> list[str]:
     """Format a table of exposures with weather and DIMM columns."""
-    lines = [title, f"  {'UT(h)':>6}  {'tag':<20}  {'RA':>7}  {'Dec':>7}  "
-             f"{'Temp':>4}  {'RH%':>3}  {'Wind':>4}  {'Dir':>4}  {'DIMM':>4}  file"]
+    headers = ["UT(h)", "tag", "RA", "Dec", "Temp", "RH%", "Wind", "Dir", "DIMM", "file"]
+    table_rows: list[list[str]] = []
     for r in rows:
         night_ut = to_night_ut(r["ut"], anchor)
         w = nearest_on_night(night_ut, weather, anchor, EXPOSURE_TOL)
         dimm = dimm_for_exposure(night_ut, anchor, dimm_samples)
         if w:
-            wx = f"{w.temp:>4}  {w.humid:>3}  {w.wind:>4}  {w.wind_dir:>4}"
+            temp, humid, wind, wind_dir = w.temp, w.humid, w.wind, w.wind_dir
         else:
-            wx = " n/a  n/a  n/a  n/a"
+            temp = humid = wind = wind_dir = "n/a"
         tag = (r["tag"][:18] + "..") if len(r["tag"]) > 20 else r["tag"]
-        lines.append(
-            f"  {r['ut']:6.3f}  {tag:<20}  {r['ra']:7.2f}  {r['dec']:7.2f}  "
-            f"{wx}  {dimm:>4}  {r['fits']}"
+        table_rows.append(
+            [
+                f"{r['ut']:.3f}",
+                tag,
+                f"{r['ra']:.2f}",
+                f"{r['dec']:.2f}",
+                temp,
+                humid,
+                wind,
+                wind_dir,
+                dimm,
+                r["fits"],
+            ]
         )
-    return lines
+    return [title] + format_table(
+        headers,
+        table_rows,
+        aligns=["r", "l", "r", "r", "r", "r", "r", "r", "r", "l"],
+    )
 
 
 def build_exposure_section(

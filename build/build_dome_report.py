@@ -31,6 +31,7 @@ from lib.dome_daemon import (
     load_dome_daemon_closes,
     utc_to_ut_decimal,
 )
+from lib.text_table import format_table
 from lib.questctl_log import (
     count_questctl_bit_closes_on_night,
     count_questctl_closes_on_night,
@@ -476,13 +477,27 @@ def build_dome_section(
 
     if summary and summary.actions:
         lines.append("  all actions:")
-        lines.append(f"  {'#':>2}  {'UT(h)':>9}  {'event':<10}  source")
-        for i, (ut, action, source) in enumerate(summary.actions, 1):
-            lines.append(f"  {i:02d}  {ut:9.5f}  {action:<10}  {source}")
+        lines.extend(
+            format_table(
+                ["#", "UT(h)", "event", "source"],
+                [
+                    [f"{i:02d}", f"{ut:.5f}", action, source]
+                    for i, (ut, action, source) in enumerate(summary.actions, 1)
+                ],
+                aligns=["r", "r", "l", "l"],
+            )
+        )
     elif events:
-        lines.append(f"  {'#':>2}  {'UT(h)':>9}  event")
-        for i, (ut, state) in enumerate(events, 1):
-            lines.append(f"  {i:02d}  {ut:9.5f}  {state.upper()}")
+        lines.extend(
+            format_table(
+                ["#", "UT(h)", "event"],
+                [
+                    [f"{i:02d}", f"{ut:.5f}", state.upper()]
+                    for i, (ut, state) in enumerate(events, 1)
+                ],
+                aligns=["r", "r", "l"],
+            )
+        )
 
     if summary:
         lines.append("  observing slot:")

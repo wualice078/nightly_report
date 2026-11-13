@@ -16,6 +16,8 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+from lib.text_table import format_table
+
 RADEC_TOL = 0.002
 
 
@@ -136,30 +138,37 @@ def field_counts(fields: list[PlannedField], log_lines: list[str]) -> dict[str, 
 
 def _field_table(complete, partial, none) -> list[str]:
     """Format COMPLETE / PARTIAL / NOT OBSERVED tables for the report."""
-    header = f"  {'tag':<20}  {'RA':>8}  {'Dec':>9}  got/need"
-    lines = [header]
+    headers = ["tag", "RA", "Dec", "got/need"]
+    aligns = ["l", "r", "r", "r"]
+    lines: list[str] = []
 
     def add_group(label: str, items):
+        nonlocal lines
         if not items:
             return
-        if len(lines) > 1:
+        if lines:
             lines.append("")
         lines.append(f"  {label}")
-        for f, n in items:
-            lines.append(
-                f"  {f.tag:<20}  {f.ra:8.4f}  {f.dec:9.4f}  {n}/{f.n_required}"
-            )
+        rows = [
+            [f.tag, f"{f.ra:.4f}", f"{f.dec:.4f}", f"{n}/{f.n_required}"]
+            for f, n in items
+        ]
+        lines.extend(format_table(headers, rows, aligns=aligns))
 
     add_group(f"COMPLETE ({len(complete)})", complete)
     add_group(f"PARTIAL ({len(partial)})", partial)
     if none:
-        if len(lines) > 1:
+        if lines:
             lines.append("")
         lines.append(f"  NOT OBSERVED ({len(none)})")
-        for f in none:
-            lines.append(
-                f"  {f.tag:<20}  {f.ra:8.4f}  {f.dec:9.4f}  0/{f.n_required}"
-            )
+        rows = [
+            [f.tag, f"{f.ra:.4f}", f"{f.dec:.4f}", f"0/{f.n_required}"]
+            for f in none
+        ]
+        lines.extend(format_table(headers, rows, aligns=aligns))
+    elif not complete and not partial:
+        # Empty inventory still needs a header so the section is readable.
+        lines.extend(format_table(headers, [], aligns=aligns))
     return lines
 
 
