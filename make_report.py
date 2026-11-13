@@ -63,48 +63,63 @@ def build_missing_report(date: str, error: str) -> str:
     )
 
 
+def _progress(msg: str) -> None:
+    """Print a timestamped build step to stderr (so cron logs show where time goes)."""
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True)
+
+
 def build_full_report(paths: NightPaths) -> str:
     """
     Assemble all report sections for one resolved night.
 
     ``paths`` comes from :func:`lib.night_paths.resolve_night_paths`.
     """
+    _progress(f"building {paths.date} ({paths.source})")
     exp_ut = exposure_ut_list(paths.log_obs)
     header = (
         f"LS4 NIGHTLY REPORT - {paths.date}\n"
         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
         f"Data source: {paths.source}\n\n"
     )
-    return "".join(
-        [
-            header,
-            build_summary_section(
-                paths.obsplan,
-                paths.log_obs,
-                paths.scheduler_log,
-                night_date=paths.date,
-                dome_daemon_log=paths.dome_daemon_log,
-                questctl_log_dir=paths.questctl_log_dir,
-                exposure_ut=exp_ut,
-            ),
-            build_fields_section(paths.obsplan, paths.log_obs),
-            "\n",
-            build_exposure_section(
-                paths.log_obs,
-                paths.scheduler_log,
-                night_date=paths.date,
-                dimm_log=paths.dimm_log,
-            ),
-            build_dome_section(
-                paths.scheduler_log,
-                night_date=paths.date,
-                dome_daemon_log=paths.dome_daemon_log,
-                questctl_log_dir=paths.questctl_log_dir,
-                exposure_ut=exp_ut,
-            ),
-            build_weather_section(paths.scheduler_log, exposure_ut=exp_ut),
-        ]
+    parts = [header]
+    _progress("summary")
+    parts.append(
+        build_summary_section(
+            paths.obsplan,
+            paths.log_obs,
+            paths.scheduler_log,
+            night_date=paths.date,
+            dome_daemon_log=paths.dome_daemon_log,
+            questctl_log_dir=paths.questctl_log_dir,
+            exposure_ut=exp_ut,
+        )
     )
+    _progress("fields")
+    parts.append(build_fields_section(paths.obsplan, paths.log_obs))
+    parts.append("\n")
+    _progress("exposures")
+    parts.append(
+        build_exposure_section(
+            paths.log_obs,
+            paths.scheduler_log,
+            night_date=paths.date,
+            dimm_log=paths.dimm_log,
+        )
+    )
+    _progress("dome")
+    parts.append(
+        build_dome_section(
+            paths.scheduler_log,
+            night_date=paths.date,
+            dome_daemon_log=paths.dome_daemon_log,
+            questctl_log_dir=paths.questctl_log_dir,
+            exposure_ut=exp_ut,
+        )
+    )
+    _progress("weather")
+    parts.append(build_weather_section(paths.scheduler_log, exposure_ut=exp_ut))
+    _progress("done")
+    return "".join(parts)
 
 
 def main() -> int:

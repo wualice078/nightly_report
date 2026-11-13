@@ -15,7 +15,8 @@ already closed are ignored. Unix time comes from nearby
 Fallback: ``CLOSE_CODE <epoch>`` after a manual ``closedome`` (signal 10).
 
 Questctl log filenames reflect process **start** time; a single log may span
-weeks. Always filter events by UTC timestamp, not filename.
+weeks. Always filter events by UTC timestamp, not filename. Large logs are
+seeked to the night's epoch window so reports do not rescan months of history.
 """
 
 from __future__ import annotations
@@ -32,35 +33,71 @@ from lib.weather_samples import night_anchor_ut, to_night_ut
 CLOSE_CODE = re.compile(r"signal code has been set to CLOSE_CODE\s+(\d+)")
 BIT_LINE = re.compile(r"dome status bit is (\d+)")
 STATUS_TS = re.compile(r"checking telescope status (\d{9,})")
+STATUS_TS_BYTES = re.compile(br"checking telescope status (\d{9,})")
 LOG_START = re.compile(r"^questctl\.(\d{8})\d+\.log$")
-GREP_BITS = r"checking telescope status [0-9]{9,}|dome status bit is [0-9]"
+# Keep at most this many newest overlapping logs per directory.
+_MAX_LOGS_PER_DIR = 3
+# Files bigger than this are byte-seeked to the night window first.
+_SEEK_MIN_BYTES = 1_000_000
+
+
+def _night_epoch_bounds(night_date: str) -> tuple[int, int]:
+    """
+    Unix epoch ``[lo, hi]`` covering UT night ``night_date``.
+
+    Starts at 12:00 UT on the **previous** calendar day so shutter state from
+    the prior evening is available for ``1→0`` detection; event lists are still
+    filtered with :func:`belongs_to_ut_night`. ``hi`` is 18:00 UT the day after
+    ``night_date``.
+    """
+    d0 = datetime.strptime(night_date, "%Y%m%d").replace(tzinfo=timezone.utc)
+    lo = int((d0 - timedelta(hours=12)).timestamp())  # previous day 12:00 UT
+    hi = int((d0 + timedelta(days=1, hours=18)).timestamp())
+    return lo, hi
 
 
 def questctl_logs_for_night(log_dir: Path | None, night_date: str) -> list[Path]:
     """
     Return ``questctl.*.log`` files that could contain events for ``night_date``.
 
-    Drops logs whose filename start date is after the UT night ends. Older
-    start dates are kept (a long-running process can cover later nights).
+    Drops logs whose filename start date is after the UT night ends, and logs
+    whose mtime is before the night starts (already finished earlier). Among
+    the rest, keeps the newest few by start date — a long-running process log
+    is included when its mtime reaches into the night.
     """
     if log_dir is None or not log_dir.is_dir():
         return []
+    if not night_date:
+        return sorted(log_dir.glob("questctl.*.log"))
     try:
-        night_end = datetime.strptime(night_date, "%Y%m%d") + timedelta(days=2)
+        d0 = datetime.strptime(night_date, "%Y%m%d")
     except ValueError:
-        night_end = None
-    out: list[Path] = []
-    for path in sorted(log_dir.glob("questctl.*.log")):
+        return sorted(log_dir.glob("questctl.*.log"))
+    night_end = d0 + timedelta(days=2)
+    night_start_ts = (d0.replace(tzinfo=timezone.utc) + timedelta(hours=12)).timestamp()
+
+    scored: list[tuple[datetime, Path]] = []
+    for path in log_dir.glob("questctl.*.log"):
         m = LOG_START.match(path.name)
-        if m and night_end is not None:
-            try:
-                started = datetime.strptime(m.group(1), "%Y%m%d")
-            except ValueError:
-                started = None
-            if started is not None and started > night_end:
-                continue
-        out.append(path)
-    return out
+        if not m:
+            continue
+        try:
+            started = datetime.strptime(m.group(1), "%Y%m%d")
+        except ValueError:
+            continue
+        if started > night_end:
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        # Finished before this night began → cannot hold tonight's events.
+        if mtime < night_start_ts - 3600:
+            continue
+        scored.append((started, path))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [p for _started, p in scored[:_MAX_LOGS_PER_DIR]]
 
 
 def extra_questctl_log_dirs(primary: Path | None) -> list[Path]:
@@ -131,51 +168,117 @@ def _close_code_lines(path: Path):
     yield from _grep_lines(path, "CLOSE_CODE")
 
 
-def _bit_changes_from_file(path: Path) -> list[tuple[datetime, int]]:
+def _seek_near_epoch(path: Path, epoch_lo: int) -> int:
+    """
+    Byte offset near the first ``checking telescope status`` at/after ``epoch_lo``.
+
+    Binary-searches a large chronological log so night rebuilds do not reread
+    months of earlier polls. Returns 0 when seeking is unnecessary or fails.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return 0
+    if size < _SEEK_MIN_BYTES:
+        return 0
+
+    lo_off, hi_off = 0, size
+    best = 0
+    try:
+        with path.open("rb") as fh:
+            for _ in range(48):
+                if hi_off - lo_off < 8192:
+                    break
+                mid = (lo_off + hi_off) // 2
+                fh.seek(mid)
+                fh.readline()  # align to next full line
+                aligned = fh.tell()
+                epoch: int | None = None
+                for _ in range(400):
+                    line = fh.readline()
+                    if not line:
+                        break
+                    m = STATUS_TS_BYTES.search(line)
+                    if m:
+                        epoch = int(m.group(1))
+                        break
+                if epoch is None:
+                    # No status in this slice — move earlier.
+                    hi_off = mid
+                    continue
+                if epoch < epoch_lo:
+                    lo_off = fh.tell()
+                    best = lo_off
+                else:
+                    hi_off = aligned
+                    best = aligned
+    except OSError:
+        return 0
+    return best
+
+
+def _bit_changes_from_file(
+    path: Path,
+    *,
+    epoch_lo: int | None = None,
+    epoch_hi: int | None = None,
+) -> list[tuple[datetime, int]]:
     """
     Collapse ``dome status bit`` lines into timestamped state changes.
 
-    Single pass over the file. Each bit sample uses the most recent
-    ``checking telescope status`` epoch; bits before the first epoch wait for
-    the next one (same rules as the old grep-based path).
+    Each bit sample uses the most recent ``checking telescope status`` epoch;
+    bits before the first epoch wait for the next one. When ``epoch_lo`` /
+    ``epoch_hi`` are set, seeks near ``epoch_lo`` on large files and stops
+    once timestamps pass ``epoch_hi``.
     """
+    start_off = _seek_near_epoch(path, epoch_lo) if epoch_lo is not None else 0
     last_ts: int | None = None
-    pending: list[tuple[int | None, int]] = []
-    saw_bit = False
+    pending_before_ts: list[int] = []
+    events: list[tuple[datetime, int]] = []
+    prev: int | None = None
+
+    def _emit(ts: int, bit: int) -> None:
+        nonlocal prev
+        if bit == prev:
+            return
+        if epoch_lo is not None and ts < epoch_lo:
+            prev = bit
+            return
+        if epoch_hi is not None and ts > epoch_hi:
+            return
+        events.append((datetime.fromtimestamp(ts, tz=timezone.utc), bit))
+        prev = bit
+
     try:
         with path.open(encoding="utf-8", errors="replace") as fh:
+            if start_off:
+                fh.seek(start_off)
+                fh.readline()  # drop possible partial line after seek
             for line in fh:
                 if "checking telescope status" in line:
                     m = STATUS_TS.search(line)
                     if not m:
                         continue
                     last_ts = int(m.group(1))
-                    for i, (ts, bit) in enumerate(pending):
-                        if ts is None:
-                            pending[i] = (last_ts, bit)
+                    if epoch_hi is not None and last_ts > epoch_hi:
+                        break
+                    for bit in pending_before_ts:
+                        _emit(last_ts, bit)
+                    pending_before_ts.clear()
                     continue
                 if "dome status bit is" not in line:
                     continue
                 m = BIT_LINE.search(line)
                 if not m:
                     continue
-                saw_bit = True
-                pending.append((last_ts, int(m.group(1))))
+                bit = int(m.group(1))
+                if last_ts is None:
+                    pending_before_ts.append(bit)
+                else:
+                    _emit(last_ts, bit)
     except OSError:
         return []
 
-    if not saw_bit:
-        return []
-
-    events: list[tuple[datetime, int]] = []
-    prev: int | None = None
-    for ts, bit in pending:
-        if ts is None:
-            continue
-        if bit == prev:
-            continue
-        events.append((datetime.fromtimestamp(ts, tz=timezone.utc), bit))
-        prev = bit
     return events
 
 
@@ -211,19 +314,46 @@ def _questctl_bit_log_paths(
     return out
 
 
-@lru_cache(maxsize=32)
-def _bit_changes_cached(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[datetime, int], ...]:
-    """Cached shutter-bit changes for one questctl log file."""
-    return tuple(_bit_changes_from_file(Path(path_str)))
+@lru_cache(maxsize=64)
+def _bit_changes_cached(
+    path_str: str,
+    mtime_ns: int,
+    size: int,
+    epoch_lo: int | None,
+    epoch_hi: int | None,
+) -> tuple[tuple[datetime, int], ...]:
+    """Cached shutter-bit changes for one questctl log file (optional night window)."""
+    return tuple(
+        _bit_changes_from_file(
+            Path(path_str),
+            epoch_lo=epoch_lo,
+            epoch_hi=epoch_hi,
+        )
+    )
 
 
-def load_dome_bit_changes_for_file(path: Path) -> list[tuple[datetime, int]]:
+def load_dome_bit_changes_for_file(
+    path: Path,
+    *,
+    night_date: str | None = None,
+) -> list[tuple[datetime, int]]:
     """Collapsed shutter-bit changes from a single questctl log."""
     try:
         st = path.stat()
     except OSError:
         return []
-    return list(_bit_changes_cached(str(path), st.st_mtime_ns, st.st_size))
+    epoch_lo = epoch_hi = None
+    if night_date:
+        epoch_lo, epoch_hi = _night_epoch_bounds(night_date)
+    return list(
+        _bit_changes_cached(
+            str(path),
+            st.st_mtime_ns,
+            st.st_size,
+            epoch_lo,
+            epoch_hi,
+        )
+    )
 
 
 def load_dome_bit_changes(
@@ -240,7 +370,7 @@ def load_dome_bit_changes(
     """
     events: list[tuple[datetime, int]] = []
     for path in _questctl_bit_log_paths(log_dir, extra=extra, night_date=night_date):
-        events.extend(load_dome_bit_changes_for_file(path))
+        events.extend(load_dome_bit_changes_for_file(path, night_date=night_date))
     return events
 
 
@@ -288,7 +418,9 @@ def _shutter_events_on_night(
     opens: list[datetime] = []
     closes: list[datetime] = []
     for path in _questctl_bit_log_paths(log_dir, night_date=night_date):
-        file_opens, file_closes = shutter_opens_and_closes(load_dome_bit_changes_for_file(path))
+        file_opens, file_closes = shutter_opens_and_closes(
+            load_dome_bit_changes_for_file(path, night_date=night_date)
+        )
         opens.extend(dt for dt in file_opens if belongs_to_ut_night(dt, night_date))
         closes.extend(dt for dt in file_closes if belongs_to_ut_night(dt, night_date))
     return sorted(set(opens)), sorted(set(closes))
@@ -305,7 +437,7 @@ def load_dome_bit_events_on_night(
     out: list[tuple[datetime, int]] = []
     for path in _questctl_bit_log_paths(log_dir, night_date=night_date):
         prev: int | None = None
-        for dt, bit in load_dome_bit_changes_for_file(path):
+        for dt, bit in load_dome_bit_changes_for_file(path, night_date=night_date):
             if not belongs_to_ut_night(dt, night_date):
                 continue
             if bit == prev:
@@ -341,7 +473,9 @@ def recent_questctl_closes(log_dir: Path | None, *, limit: int = 5) -> list[tupl
     :mod:`tools.check_night`).
     """
     found: list[tuple[datetime, Path]] = []
-    for path in reversed(questctl_logs_for_night(log_dir, "")):
+    # Newest filename first among everything still on disk.
+    paths = sorted(log_dir.glob("questctl.*.log"), reverse=True) if log_dir and log_dir.is_dir() else []
+    for path in paths:
         for line in _close_code_lines(path):
             m = CLOSE_CODE.search(line)
             if not m:

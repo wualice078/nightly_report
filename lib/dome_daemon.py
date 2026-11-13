@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from lib.weather_samples import night_anchor_ut, to_night_ut
@@ -95,6 +96,29 @@ def belongs_to_ut_night(utc_dt: datetime, night_date: str) -> bool:
     return False
 
 
+@lru_cache(maxsize=8)
+def _daemon_close_rows(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[datetime, int], ...]:
+    """
+    Cached ``(close_utc, line_index)`` rows from one dome_daemon log.
+
+    Streams the file once so large mountain logs are not slurped into memory
+    on every summary/dome section call.
+    """
+    out: list[tuple[datetime, int]] = []
+    try:
+        with Path(path_str).open(encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if not DAEMON_CLOSED.search(line):
+                    continue
+                local_dt = _parse_daemon_timestamp(line)
+                if local_dt is None:
+                    continue
+                out.append((local_dt.astimezone(timezone.utc), i))
+    except OSError:
+        return ()
+    return tuple(out)
+
+
 def load_dome_daemon_closes(path: Path | None) -> list[datetime]:
     """
     Return UTC datetimes of ``schmidt dome now closed`` events, in log order.
@@ -103,15 +127,11 @@ def load_dome_daemon_closes(path: Path | None) -> list[datetime]:
     """
     if path is None or not path.is_file():
         return []
-    out: list[datetime] = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not DAEMON_CLOSED.search(line):
-            continue
-        local_dt = _parse_daemon_timestamp(line)
-        if local_dt is None:
-            continue
-        out.append(local_dt.astimezone(timezone.utc))
-    return out
+    try:
+        st = path.stat()
+    except OSError:
+        return []
+    return [dt for dt, _i in _daemon_close_rows(str(path), st.st_mtime_ns, st.st_size)]
 
 
 def count_daemon_closes_on_night(daemon_log: Path | None, night_date: str) -> int:
@@ -172,22 +192,34 @@ def daemon_close_note(daemon_log: Path | None, close_utc: datetime) -> str:
     """
     if daemon_log is None or not daemon_log.is_file():
         return "dome_daemon"
-    lines = daemon_log.read_text(encoding="utf-8", errors="replace").splitlines()
+    try:
+        st = daemon_log.stat()
+    except OSError:
+        return "dome_daemon"
+    rows = _daemon_close_rows(str(daemon_log), st.st_mtime_ns, st.st_size)
     target = close_utc.astimezone(timezone.utc)
     close_idx: int | None = None
-    for i, line in enumerate(lines):
-        if not DAEMON_CLOSED.search(line):
-            continue
-        local_dt = _parse_daemon_timestamp(line)
-        if local_dt is None:
-            continue
-        if abs((local_dt.astimezone(timezone.utc) - target).total_seconds()) < 2:
+    for dt, i in rows:
+        if abs((dt - target).total_seconds()) < 2:
             close_idx = i
             break
     if close_idx is None:
         return "dome_daemon"
 
-    context = "\n".join(lines[max(0, close_idx - 20) : close_idx + 1]).lower()
+    # Re-read only the small window around the matching close line.
+    start = max(0, close_idx - 20)
+    context_lines: list[str] = []
+    try:
+        with daemon_log.open(encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i < start:
+                    continue
+                if i > close_idx:
+                    break
+                context_lines.append(line)
+    except OSError:
+        return "dome_daemon"
+    context = "\n".join(context_lines).lower()
     if "command is close" in context:
         return "manual close (operator CLOSE / closedome)"
     if "lasilla domes are not open" in context:
