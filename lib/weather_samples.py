@@ -34,10 +34,24 @@ DOME_LINE = re.compile(
 
 GRID_STEP = 0.5  # 30 minutes in decimal UT hours
 
+# ESO meteo.last uses ~9999 for a dead / missing sensor. Those values get into
+# the scheduler log via ntt_dome_status → weather_srv → questctl.
+_ESO_MISSING = 9000.0
+
 
 def _read_log(path: Path) -> str:
     """Read a log file as UTF-8 text, replacing undecodable bytes."""
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _meteo_value(raw: str) -> str:
+    """Return ``raw`` or ``n/a`` when it is an ESO missing-sensor sentinel."""
+    try:
+        if float(raw) >= _ESO_MISSING:
+            return "n/a"
+    except ValueError:
+        pass
+    return raw
 
 
 @dataclass(frozen=True)
@@ -55,7 +69,8 @@ def load_scheduler_weather(path: Path | None) -> list[WeatherSample]:
     """
     Parse Temp/Humid/Wind lines from the scheduler log.
 
-    Returns an empty list when ``path`` is missing or not a file.
+    ESO sentinel values (>= 9000, usually 9999) become ``n/a``. Returns an
+    empty list when ``path`` is missing or not a file.
     """
     if path is None or not path.is_file():
         return []
@@ -67,10 +82,10 @@ def load_scheduler_weather(path: Path | None) -> list[WeatherSample]:
         out.append(
             WeatherSample(
                 float(m.group(1)),
-                m.group(2),
-                m.group(3),
-                m.group(4),
-                m.group(5),
+                _meteo_value(m.group(2)),
+                _meteo_value(m.group(3)),
+                _meteo_value(m.group(4)),
+                _meteo_value(m.group(5)),
             )
         )
     return out
