@@ -157,16 +157,37 @@ def night_window(
     dome: list[tuple[float, str]],
     weather: list[WeatherSample],
     exposure_ut: list[float],
+    *,
+    dome_open: float | None = None,
+    dome_close: float | None = None,
 ) -> tuple[float, float, float] | None:
     """
-    Compute the observing window on the continuous night timeline.
+    Compute the weather grid window on the continuous night timeline.
 
-    Returns ``(night_start, night_end, anchor)`` or None when dome and
-    exposure data are insufficient to bound the night.
+    Prefers resolved ``dome_open`` → ``dome_close`` (same times as the summary
+    timeline). Falls back to scheduler dome events and exposure times when
+    those are missing.
+
+    Returns ``(night_start, night_end, anchor)`` or None when bounds cannot
+    be determined.
     """
-    anchor = night_anchor_ut(dome, exposure_ut)
+    anchor_events = list(dome)
+    if dome_open is not None:
+        anchor_events = [(dome_open, "open"), *anchor_events]
+    anchor = night_anchor_ut(anchor_events, exposure_ut)
+
+    if dome_open is not None and dome_close is not None:
+        start = to_night_ut(dome_open, anchor)
+        end = to_night_ut(dome_close, anchor)
+        if end + 1e-9 >= start:
+            return start, end, anchor
+
     starts: list[float] = []
     ends: list[float] = []
+    if dome_open is not None:
+        starts.append(to_night_ut(dome_open, anchor))
+    if dome_close is not None:
+        ends.append(to_night_ut(dome_close, anchor))
     for ut, st in dome:
         nu = to_night_ut(ut, anchor)
         if st == "open":

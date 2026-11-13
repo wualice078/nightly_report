@@ -38,7 +38,7 @@ PACKAGE = Path(__file__).resolve().parent
 REPORTS = PACKAGE / "reports"
 sys.path.insert(0, str(PACKAGE))
 
-from build.build_dome_report import build_dome_section
+from build.build_dome_report import build_dome_section, dome_summary
 from build.build_exposure_report import build_exposure_section, exposure_ut_list
 from build.build_summary import build_summary_section
 from build.build_weather_report import build_weather_section
@@ -46,6 +46,7 @@ from build.compare_obsplan_log import build_fields_section
 from lib.night_paths import NightPaths, get_default_ut_date, resolve_night_paths
 from lib.practice_config import DIMM_LOG, MORNING_REPORT_EMAIL, MORNING_REPORT_LIVE_ONLY
 from lib.seeing_samples import archive_and_clear_dimm_log
+
 
 
 def build_missing_report(date: str, error: str) -> str:
@@ -76,6 +77,19 @@ def build_full_report(paths: NightPaths) -> str:
     """
     _progress(f"building {paths.date} ({paths.source})")
     exp_ut = exposure_ut_list(paths.log_obs)
+    dome = dome_summary(
+        paths.scheduler_log,
+        night_date=paths.date,
+        dome_daemon_log=paths.dome_daemon_log,
+        questctl_log_dir=paths.questctl_log_dir,
+        exposure_ut=exp_ut,
+    )
+    dome_open = dome.first_open if dome is not None else None
+    dome_close = (
+        dome.last_close
+        if dome is not None and dome.last_close is not None and not dome.still_open
+        else None
+    )
     header = (
         f"LS4 NIGHTLY REPORT - {paths.date}\n"
         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
@@ -117,7 +131,14 @@ def build_full_report(paths: NightPaths) -> str:
         )
     )
     _progress("weather")
-    parts.append(build_weather_section(paths.scheduler_log, exposure_ut=exp_ut))
+    parts.append(
+        build_weather_section(
+            paths.scheduler_log,
+            exposure_ut=exp_ut,
+            dome_open=dome_open,
+            dome_close=dome_close,
+        )
+    )
     _progress("done")
     return "".join(parts)
 

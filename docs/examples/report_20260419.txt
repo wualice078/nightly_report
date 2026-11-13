@@ -1,5 +1,5 @@
 LS4 NIGHTLY REPORT - 20260419
-Generated: 2026-11-13T02:03:31
+Generated: 2026-11-13T03:12:03
 Data source: practice
 
 === Night summary ===
@@ -88,10 +88,15 @@ Data source: practice
 
 === Weather (30 min UT) ===
   UT in hours
-  window: 1.864 - 3.489 h
+  window: 3.209 - 3.366 h
   source: /home/observer/all_logs/20260419/20260419.log
   UT(h)  Temp   RH%  Wind   Dir
-  2.000   n/a   n/a   n/a   n/a
-  2.500   n/a   n/a   n/a   n/a
-  3.000  13.0  41.0   7.2  35.0
+  3.209  13.0  39.0   7.1  38.0
+  3.209  13.0  39.0   7.1  38.0
+  3.210  13.0  39.0   7.1  38.0
+  3.247  13.0  38.0   7.8  38.0
+  3.277  13.0  35.0   7.6  37.0
+  3.307  13.1  35.0   7.8  44.0
+  3.336  13.1  36.0   7.7  36.0
+  3.366  13.1  35.0   7.8  36.0
 

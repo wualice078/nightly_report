@@ -53,9 +53,11 @@ The report is built if **any** of the scheduler log, ``log.obs``, or obsplan
 exists. Only when all three are missing does it write a short
 ``Status: DATA MISSING`` report.
 
-The weather grid normally spans the observing window (first open / exposure to
-last close / exposure). If there is no window, e.g. the dome stayed shut for
-weather, it shows every weather sample in the scheduler log instead.
+The weather grid spans **dome open → dome close** when those times are
+resolved (same sources as the summary timeline). If either bound is missing,
+it falls back to scheduler dome events and exposure times. If there is still
+no window (e.g. the dome stayed shut), it shows every weather sample in the
+scheduler log instead.
 
 Dome close resolution
 ---------------------

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Weather section: 30-minute UT grid over the observing window.
+Weather section: 30-minute UT grid over the dome-open window.
 
 Samples Temp, RH%, wind speed, and wind direction from the scheduler log at
 :class:`lib.weather_samples.GRID_STEP` intervals (30 minutes). The grid spans
-from first dome open / first exposure through last close / last exposure.
+dome open → dome close when those times are known (same resolution as the
+summary timeline); otherwise it falls back to scheduler dome events and
+exposures.
 """
 
 from __future__ import annotations
@@ -30,18 +32,27 @@ def build_weather_section(
     scheduler_log: Path | None,
     *,
     exposure_ut: list[float] | None = None,
+    dome_open: float | None = None,
+    dome_close: float | None = None,
     **_kwargs,
 ) -> str:
     """
     Build the ``=== Weather (30 min UT) ===`` report section.
 
-    ``exposure_ut`` extends the weather window when dome events alone are sparse.
-    Extra keyword arguments are ignored (call-site compatibility with other builders).
+    ``dome_open`` / ``dome_close`` set the preferred grid window (resolved
+    summary times). ``exposure_ut`` is only used when those are incomplete.
+    Extra keyword arguments are ignored (call-site compatibility).
     """
     lines = ["=== Weather (30 min UT) ===", "  UT in hours"]
     weather = load_scheduler_weather(scheduler_log)
     dome = load_dome_events(scheduler_log)
-    window = night_window(dome, weather, exposure_ut or [])
+    window = night_window(
+        dome,
+        weather,
+        exposure_ut or [],
+        dome_open=dome_open,
+        dome_close=dome_close,
+    )
 
     if not weather:
         lines += ["  (no weather data for this night)", ""]
@@ -50,10 +61,13 @@ def build_weather_section(
     if window is None:
         # No open-to-close or exposure span (e.g. dome stayed shut for weather):
         # cover every logged weather sample so the reason is visible.
-        anchor = night_anchor_ut(dome, exposure_ut or [])
+        anchor_events = list(dome)
+        if dome_open is not None:
+            anchor_events = [(dome_open, "open"), *anchor_events]
+        anchor = night_anchor_ut(anchor_events, exposure_ut or [])
         night_uts = [to_night_ut(s.ut, anchor) for s in weather]
         start, end = min(night_uts), max(night_uts)
-        lines.append("  (no observing window — showing all logged weather)")
+        lines.append("  (no dome open/close window — showing all logged weather)")
     else:
         start, end, anchor = window
     lines.append(
