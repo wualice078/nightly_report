@@ -68,10 +68,10 @@ def extra_questctl_log_dirs(primary: Path | None) -> list[Path]:
     Directories to scan for shutter bits.
 
     Always includes ``primary``. Adds practice / sample-diagnostics archives
-    only when ``primary`` is the usual mountain or practice questctl log dir,
-    so unit tests with a temp directory stay isolated.
+    only when ``primary`` is the practice questctl log dir (not the live
+    mountain ``~/logs`` path), so mountain reports do not scan archives.
     """
-    from lib.practice_config import OBSERVER_ROOT, PRACTICE_QUESTCTL_LOG_DIR, QUESTCTL_LOG_DIR
+    from lib.practice_config import OBSERVER_ROOT, PRACTICE_QUESTCTL_LOG_DIR
 
     archive = OBSERVER_ROOT / "2026_recent_logs" / "sample_diagnostics_logs"
 
@@ -81,9 +81,8 @@ def extra_questctl_log_dirs(primary: Path | None) -> list[Path]:
         except OSError:
             return str(p)
 
-    known = {_key(PRACTICE_QUESTCTL_LOG_DIR), _key(QUESTCTL_LOG_DIR)}
-    use_archives = primary is None or _key(primary) in known
-    extras = [PRACTICE_QUESTCTL_LOG_DIR, archive] if use_archives else []
+    use_archives = primary is not None and _key(primary) == _key(PRACTICE_QUESTCTL_LOG_DIR)
+    extras = [archive] if use_archives else []
 
     out: list[Path] = []
     seen: set[str] = set()
@@ -132,49 +131,41 @@ def _close_code_lines(path: Path):
     yield from _grep_lines(path, "CLOSE_CODE")
 
 
-def _file_has_dome_bits(path: Path) -> bool:
-    """Return True if the log contains any ``dome status bit is`` line."""
-    try:
-        r = subprocess.run(
-            ["grep", "-q", "dome status bit is", str(path)],
-            capture_output=True,
-        )
-        return r.returncode == 0
-    except (OSError, FileNotFoundError):
-        with path.open(encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                if "dome status bit is" in line:
-                    return True
-        return False
-
-
-def _bit_changes_from_lines(lines: list[str]) -> list[tuple[datetime, int]]:
+def _bit_changes_from_file(path: Path) -> list[tuple[datetime, int]]:
     """
     Collapse ``dome status bit`` lines into timestamped state changes.
 
-    Each bit sample is stamped with the most recent ``checking telescope status``
-    epoch before it, or the next one after it if none came first.
+    Single pass over the file. Each bit sample uses the most recent
+    ``checking telescope status`` epoch; bits before the first epoch wait for
+    the next one (same rules as the old grep-based path).
     """
-    records: list[tuple[str, int]] = []
-    for line in lines:
-        m = STATUS_TS.search(line)
-        if m:
-            records.append(("ts", int(m.group(1))))
-            continue
-        m = BIT_LINE.search(line)
-        if m:
-            records.append(("bit", int(m.group(1))))
-
     last_ts: int | None = None
     pending: list[tuple[int | None, int]] = []
-    for kind, val in records:
-        if kind == "ts":
-            last_ts = val
-            for i, (ts, bit) in enumerate(pending):
-                if ts is None:
-                    pending[i] = (val, bit)
-        else:
-            pending.append((last_ts, val))
+    saw_bit = False
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if "checking telescope status" in line:
+                    m = STATUS_TS.search(line)
+                    if not m:
+                        continue
+                    last_ts = int(m.group(1))
+                    for i, (ts, bit) in enumerate(pending):
+                        if ts is None:
+                            pending[i] = (last_ts, bit)
+                    continue
+                if "dome status bit is" not in line:
+                    continue
+                m = BIT_LINE.search(line)
+                if not m:
+                    continue
+                saw_bit = True
+                pending.append((last_ts, int(m.group(1))))
+    except OSError:
+        return []
+
+    if not saw_bit:
+        return []
 
     events: list[tuple[datetime, int]] = []
     prev: int | None = None
@@ -188,7 +179,12 @@ def _bit_changes_from_lines(lines: list[str]) -> list[tuple[datetime, int]]:
     return events
 
 
-def _questctl_bit_log_paths(log_dir: Path | None, *, extra: bool = True) -> list[Path]:
+def _questctl_bit_log_paths(
+    log_dir: Path | None,
+    *,
+    extra: bool = True,
+    night_date: str | None = None,
+) -> list[Path]:
     """Return unique questctl log paths to scan for shutter bits."""
     dirs = extra_questctl_log_dirs(log_dir) if extra else (
         [log_dir] if log_dir is not None else []
@@ -198,8 +194,16 @@ def _questctl_bit_log_paths(log_dir: Path | None, *, extra: bool = True) -> list
     for d in dirs:
         if d is None or not d.is_dir():
             continue
-        for path in sorted(d.glob("questctl.*.log")):
-            key = str(path.resolve()) if path.exists() else str(path)
+        paths = (
+            questctl_logs_for_night(d, night_date)
+            if night_date
+            else sorted(d.glob("questctl.*.log"))
+        )
+        for path in paths:
+            try:
+                key = str(path.resolve()) if path.exists() else str(path)
+            except OSError:
+                key = str(path)
             if key in seen:
                 continue
             seen.add(key)
@@ -210,10 +214,7 @@ def _questctl_bit_log_paths(log_dir: Path | None, *, extra: bool = True) -> list
 @lru_cache(maxsize=32)
 def _bit_changes_cached(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[datetime, int], ...]:
     """Cached shutter-bit changes for one questctl log file."""
-    path = Path(path_str)
-    if not _file_has_dome_bits(path):
-        return ()
-    return tuple(_bit_changes_from_lines(_grep_lines(path, GREP_BITS)))
+    return tuple(_bit_changes_from_file(Path(path_str)))
 
 
 def load_dome_bit_changes_for_file(path: Path) -> list[tuple[datetime, int]]:
@@ -225,7 +226,12 @@ def load_dome_bit_changes_for_file(path: Path) -> list[tuple[datetime, int]]:
     return list(_bit_changes_cached(str(path), st.st_mtime_ns, st.st_size))
 
 
-def load_dome_bit_changes(log_dir: Path | None, *, extra: bool = True) -> list[tuple[datetime, int]]:
+def load_dome_bit_changes(
+    log_dir: Path | None,
+    *,
+    extra: bool = True,
+    night_date: str | None = None,
+) -> list[tuple[datetime, int]]:
     """
     Load shutter-bit changes from each questctl log **separately**, then concat.
 
@@ -233,7 +239,7 @@ def load_dome_bit_changes(log_dir: Path | None, *, extra: bool = True) -> list[t
     diagnostics) must not be merged into one 0/1/2 stream.
     """
     events: list[tuple[datetime, int]] = []
-    for path in _questctl_bit_log_paths(log_dir, extra=extra):
+    for path in _questctl_bit_log_paths(log_dir, extra=extra, night_date=night_date):
         events.extend(load_dome_bit_changes_for_file(path))
     return events
 
@@ -281,7 +287,7 @@ def _shutter_events_on_night(
     """
     opens: list[datetime] = []
     closes: list[datetime] = []
-    for path in _questctl_bit_log_paths(log_dir):
+    for path in _questctl_bit_log_paths(log_dir, night_date=night_date):
         file_opens, file_closes = shutter_opens_and_closes(load_dome_bit_changes_for_file(path))
         opens.extend(dt for dt in file_opens if belongs_to_ut_night(dt, night_date))
         closes.extend(dt for dt in file_closes if belongs_to_ut_night(dt, night_date))
@@ -297,7 +303,7 @@ def load_dome_bit_events_on_night(
     One row per state change, per log file. Files are not interleaved.
     """
     out: list[tuple[datetime, int]] = []
-    for path in _questctl_bit_log_paths(log_dir):
+    for path in _questctl_bit_log_paths(log_dir, night_date=night_date):
         prev: int | None = None
         for dt, bit in load_dome_bit_changes_for_file(path):
             if not belongs_to_ut_night(dt, night_date):
