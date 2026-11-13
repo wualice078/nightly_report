@@ -1,5 +1,5 @@
 LS4 NIGHTLY REPORT - 20260419
-Generated: 2026-11-13T01:51:34
+Generated: 2026-11-13T02:03:31
 Data source: practice
 
 === Night summary ===
@@ -8,9 +8,11 @@ Data source: practice
   Calibration fields: 0 planned, 0 complete, 0 partial, 0 not observed
     (0 with at least one exposure)
   Exposures in log: 22
-  Observing slot start:  3.209 h (03:12:33 UT)
-  Observing slot end:    3.366 h (03:21:59 UT) (from scheduler log)
-  Dome total open:  0.157 h (9.4 min)
+  Dome open:         3.209 h (03:12:33 UT) (from scheduler log)
+  Observing start:   1.864 h (01:51:50 UT)
+  Observing end:     3.489 h (03:29:20 UT)
+  Dome close:        3.366 h (03:21:59 UT) (from scheduler log)
+  Dome total open:   0.157 h (9.4 min)
 
 === Field inventory (obsplan vs log.obs) ===
   obsplan: /home/observer/all_logs/20260419/20260419.obsplan
@@ -75,9 +77,11 @@ Data source: practice
   01  3.00111  CLOSED  scheduler
   02  3.20917  OPEN    scheduler
   03  3.36639  CLOSED  scheduler
-  observing slot:
-    start  UT 3.20917 h
-  ** slot end (from scheduler): UT 3.36639 h
+  timeline:
+    dome open         UT 3.20917 h (scheduler)
+    observing start   UT 1.86389 h
+    observing end     UT 3.48889 h
+    dome close         UT 3.36639 h (from scheduler)
   intervals (open):
     01    3.20917 -   3.36639  (0.157 h)
   total open: 0.157 h (9.4 min)

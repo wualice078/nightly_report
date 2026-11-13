@@ -42,19 +42,37 @@ def _format_ut(ut: float) -> str:
     return f"{ut:.3f} h ({h:02d}:{m:02d}:{s:02d} UT)"
 
 
-def _close_source_label(source: str | None, note: str | None) -> str:
-    """Append a short parenthetical describing where the dome close time came from."""
-    if source is None:
-        return ""
+def _source_label(source: str | None, note: str | None = None) -> str:
+    """Append a short parenthetical describing where a dome time came from."""
     if note:
         return f" ({note})"
+    if source is None:
+        return ""
     if source == "dome_daemon":
         return " (from dome_daemon.log)"
-    if source == "questctl":
+    if source in ("questctl", "questctl bits"):
         return " (from questctl log)"
     if source == "scheduler":
         return " (from scheduler log)"
-    return ""
+    return f" (from {source})"
+
+
+def _close_missing_reason(dome) -> str:
+    """Explain why dome close could not be resolved."""
+    parts = ["scheduler log ended open"]
+    if dome.daemon_checked and dome.daemon_closes_on_night == 0:
+        parts.append("no dome_daemon close")
+    elif dome.daemon_checked:
+        parts.append(f"dome_daemon {dome.daemon_closes_on_night} unmatched")
+    if dome.questctl_checked and dome.questctl_bit_closes_on_night == 0:
+        parts.append("no questctl shutter 1→0")
+    elif dome.questctl_checked:
+        parts.append(f"questctl {dome.questctl_bit_closes_on_night} shutter close(s) unmatched")
+    if dome.questctl_checked and dome.questctl_closes_on_night == 0:
+        parts.append("no CLOSE_CODE")
+    elif dome.questctl_checked and dome.questctl_closes_on_night:
+        parts.append(f"{dome.questctl_closes_on_night} CLOSE_CODE unmatched")
+    return "; ".join(parts)
 
 
 def build_summary_section(
@@ -70,9 +88,9 @@ def build_summary_section(
     """
     Build the ``=== Night summary ===`` report section.
 
-    Parameters mirror :func:`build.build_dome_report.dome_summary` so dome close
-    resolution uses dome_daemon → questctl shutter bits → CLOSE_CODE →
-    scheduler.
+    Timeline lines are printed in topological order: dome open, observing
+    start, observing end, dome close. Close resolution still uses
+    dome_daemon → questctl shutter bits → CLOSE_CODE → scheduler.
     """
     planned = parse_obsplan(obsplan)
     log_lines = parse_log_obs(log_obs)
@@ -103,36 +121,47 @@ def build_summary_section(
     )
     if dome is None:
         lines.append("  Dome: (no scheduler log)")
-    elif dome.first_open is None:
+    elif (
+        dome.first_open is None
+        and dome.observing_start is None
+        and dome.last_close is None
+    ):
         lines.append("  Dome: no open/close events in log")
     else:
-        lines.append(f"  Observing slot start:  {_format_ut(dome.first_open)}")
-        if dome.last_close is not None:
+        if dome.first_open is not None:
             lines.append(
-                f"  Observing slot end:    {_format_ut(dome.last_close)}"
-                f"{_close_source_label(dome.last_close_source, dome.close_note)}"
+                f"  Dome open:         {_format_ut(dome.first_open)}"
+                f"{_source_label(dome.dome_open_source)}"
+            )
+        else:
+            lines.append("  Dome open:         n/a")
+
+        if dome.observing_start is not None:
+            lines.append(f"  Observing start:   {_format_ut(dome.observing_start)}")
+        else:
+            lines.append("  Observing start:   n/a (no exposures)")
+
+        if dome.observing_end is not None:
+            lines.append(f"  Observing end:     {_format_ut(dome.observing_end)}")
+        else:
+            lines.append("  Observing end:     n/a (no exposures)")
+
+        if dome.last_close is not None and not dome.still_open:
+            lines.append(
+                f"  Dome close:        {_format_ut(dome.last_close)}"
+                f"{_source_label(dome.last_close_source, dome.close_note)}"
             )
         elif dome.still_open:
-            parts = ["scheduler log ended open"]
-            if dome.daemon_checked and dome.daemon_closes_on_night == 0:
-                parts.append("no dome_daemon close")
-            elif dome.daemon_checked:
-                parts.append(f"dome_daemon {dome.daemon_closes_on_night} unmatched")
-            if dome.questctl_checked and dome.questctl_bit_closes_on_night == 0:
-                parts.append("no questctl shutter 1→0")
-            elif dome.questctl_checked:
-                parts.append(f"questctl {dome.questctl_bit_closes_on_night} shutter close(s) unmatched")
-            if dome.questctl_checked and dome.questctl_closes_on_night == 0:
-                parts.append("no CLOSE_CODE")
-            elif dome.questctl_checked and dome.questctl_closes_on_night:
-                parts.append(f"{dome.questctl_closes_on_night} CLOSE_CODE unmatched")
-            lines.append(f"  Observing slot end:    n/a ({'; '.join(parts)})")
+            lines.append(f"  Dome close:        n/a ({_close_missing_reason(dome)})")
+        else:
+            lines.append("  Dome close:        n/a")
+
         if dome.total_open_h > 0:
             lines.append(
-                f"  Dome total open:  {dome.total_open_h:.3f} h ({dome.total_open_h * 60:.1f} min)"
+                f"  Dome total open:   {dome.total_open_h:.3f} h ({dome.total_open_h * 60:.1f} min)"
             )
         elif dome.still_open and not dome.intervals:
-            lines.append("  Dome total open:  n/a (no close recorded)")
+            lines.append("  Dome total open:   n/a (no close recorded)")
 
     lines.append("")
     return "\n".join(lines) + "\n"

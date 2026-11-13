@@ -48,6 +48,13 @@ class DomeSummary:
     """
     Dome statistics for one UT observing night.
 
+    Timeline fields (topological order):
+
+    * ``first_open`` / dome open — physical open used for the night (last OPEN
+      before the first exposure when exposures exist)
+    * ``observing_start`` / ``observing_end`` — first and last exposure UT
+    * ``last_close`` — physical dome close
+
     ``last_close_source`` is one of ``questctl``, ``scheduler``, ``dome_daemon``,
     or None when no close was resolved. ``close_utc`` and ``close_note`` are set
     when the close came from questctl (shutter bit or CLOSE_CODE) or dome_daemon.
@@ -62,6 +69,9 @@ class DomeSummary:
     last_close_source: str | None = None  # "questctl" | "scheduler" | "dome_daemon"
     close_utc: datetime | None = None
     close_note: str | None = None
+    dome_open_source: str | None = None
+    observing_start: float | None = None
+    observing_end: float | None = None
     daemon_checked: bool = False
     daemon_closes_on_night: int = 0
     questctl_checked: bool = False
@@ -81,6 +91,35 @@ def _total_interval_hours(intervals: list[tuple[float, float]], anchor: float) -
     return sum(_interval_hours(t0, t1, anchor) for t0, t1 in intervals)
 
 
+def _exposure_span(
+    exposure_ut: list[float],
+    anchor: float,
+) -> tuple[float | None, float | None]:
+    """
+    Return ``(first, last)`` clock-UT exposure times in night order.
+
+    Uses the continuous night timeline so post-midnight times sort after evening
+    ones (otherwise ``min(exposure_ut)`` can be 0.0 h after a 23 h open).
+    """
+    if not exposure_ut:
+        return None, None
+    ordered = sorted(exposure_ut, key=lambda u: to_night_ut(u, anchor))
+    return ordered[0], ordered[-1]
+
+
+def _open_source(
+    open_ut: float | None,
+    actions: tuple[tuple[float, str, str], ...],
+) -> str | None:
+    """Match an OPEN action to ``open_ut`` and return its source label."""
+    if open_ut is None:
+        return None
+    for ut, action, source in actions:
+        if action == "OPEN" and abs(ut - open_ut) < 1e-4:
+            return source
+    return "scheduler"
+
+
 def _set_close(
     *,
     first_open: float | None,
@@ -91,6 +130,9 @@ def _set_close(
     source: str,
     close_utc: datetime | None,
     close_note: str | None,
+    dome_open_source: str | None = None,
+    observing_start: float | None = None,
+    observing_end: float | None = None,
 ) -> DomeSummary:
     """
     Apply a resolved close time to dome state.
@@ -118,6 +160,9 @@ def _set_close(
         last_close_source=source,
         close_utc=close_utc,
         close_note=close_note,
+        dome_open_source=dome_open_source,
+        observing_start=observing_start,
+        observing_end=observing_end,
     )
 
 
@@ -223,12 +268,14 @@ def dome_summary(
 
     exposure_ut = exposure_ut or []
     anchor = night_anchor_ut(events, exposure_ut)
+    observing_start, observing_end = _exposure_span(exposure_ut, anchor)
 
     first_open: float | None = None
     scheduler_close: float | None = None
     open_ut: float | None = None
     intervals: list[tuple[float, float]] = []
     total_h = 0.0
+    dome_open_source: str | None = None
 
     for ut, state in events:
         if state == "open":
@@ -282,6 +329,9 @@ def dome_summary(
                 still_open=still_open,
                 open_since=open_ut,
                 last_close_source="scheduler" if end_close is not None else None,
+                dome_open_source="scheduler" if first_open is not None else None,
+                observing_start=observing_start,
+                observing_end=observing_end,
             )
         )
 
@@ -307,10 +357,28 @@ def dome_summary(
     )
     if slot_open is not None:
         first_open = slot_open
+        dome_open_source = _open_source(slot_open, actions)
+        # Only mark still-open when the scheduler never closed after this open.
+        # (Previously we always set still_open here, which hid a real close.)
         if open_ut is None:
-            open_ut = slot_open
-            still_open = True
+            closed_after = (
+                scheduler_close is not None
+                and to_night_ut(scheduler_close, anchor) + 1e-9
+                >= to_night_ut(slot_open, anchor)
+            )
+            if not closed_after:
+                open_ut = slot_open
+                still_open = True
         anchor = night_anchor_ut(events + [(slot_open, "open")], exposure_ut)
+        observing_start, observing_end = _exposure_span(exposure_ut, anchor)
+    elif first_open is not None:
+        dome_open_source = "scheduler"
+
+    close_kwargs = dict(
+        dome_open_source=dome_open_source,
+        observing_start=observing_start,
+        observing_end=observing_end,
+    )
 
     # 1) dome_daemon — confirmed closed (weather, sun-up, or operator CLOSE)
     if dome_daemon_log and first_open is not None:
@@ -336,6 +404,7 @@ def dome_summary(
                     source="dome_daemon",
                     close_utc=close_utc_dt,
                     close_note=daemon_close_note(dome_daemon_log, close_utc_dt),
+                    **close_kwargs,
                 )
             )
 
@@ -360,6 +429,7 @@ def dome_summary(
                     source="questctl",
                     close_utc=close_utc_dt,
                     close_note="questctl shutter 1→2→0 (TCS dome status; 2 = opening/closing)",
+                    **close_kwargs,
                 )
             )
 
@@ -383,11 +453,25 @@ def dome_summary(
                     source="questctl",
                     close_utc=close_utc_dt,
                     close_note="manual end-of-night (questctl CLOSE_CODE / closedome)",
+                    **close_kwargs,
                 )
             )
 
     if first_open is None and not intervals and not still_open and scheduler_close is None:
-        return None
+        if observing_start is None:
+            return None
+        return _with_counts(
+            DomeSummary(
+                first_open=None,
+                last_close=None,
+                total_open_h=0.0,
+                intervals=[],
+                still_open=False,
+                open_since=None,
+                observing_start=observing_start,
+                observing_end=observing_end,
+            )
+        )
 
     # 4) scheduler dome : closed (when TCS status was polled, after last exposure)
     if (
@@ -404,6 +488,9 @@ def dome_summary(
                 still_open=False,
                 open_since=None,
                 last_close_source="scheduler",
+                dome_open_source=dome_open_source,
+                observing_start=observing_start,
+                observing_end=observing_end,
             )
         )
 
@@ -416,6 +503,9 @@ def dome_summary(
             still_open=still_open,
             open_since=open_ut,
             last_close_source="scheduler" if scheduler_close is not None else None,
+            dome_open_source=dome_open_source,
+            observing_start=observing_start,
+            observing_end=observing_end,
         )
     )
 
@@ -427,16 +517,19 @@ def _format_utc(dt: datetime) -> str:
 
 
 def _resolved_close_lines(summary: DomeSummary) -> list[str]:
-    """Format resolved close time, note, and UTC for the dome section."""
+    """Format resolved dome-close time, note, and UTC for the dome section."""
     if summary.last_close is None:
         return []
+    if summary.still_open:
+        return []
     lines = [
-        f"  ** slot end (from {summary.last_close_source}): UT {summary.last_close:.5f} h"
+        f"    dome close         UT {summary.last_close:.5f} h"
+        f" (from {summary.last_close_source})"
     ]
     if summary.close_note:
-        lines.append(f"     {summary.close_note}")
+        lines.append(f"                       {summary.close_note}")
     if summary.close_utc is not None:
-        lines.append(f"     {_format_utc(summary.close_utc)}")
+        lines.append(f"                       {_format_utc(summary.close_utc)}")
     return lines
 
 
@@ -500,10 +593,19 @@ def build_dome_section(
         )
 
     if summary:
-        lines.append("  observing slot:")
+        lines.append("  timeline:")
         if summary.first_open is not None:
-            lines.append(f"    start  UT {summary.first_open:.5f} h")
-        lines.extend(_resolved_close_lines(summary))
+            src = f" ({summary.dome_open_source})" if summary.dome_open_source else ""
+            lines.append(f"    dome open         UT {summary.first_open:.5f} h{src}")
+        if summary.observing_start is not None:
+            lines.append(f"    observing start   UT {summary.observing_start:.5f} h")
+        if summary.observing_end is not None:
+            lines.append(f"    observing end     UT {summary.observing_end:.5f} h")
+        close_lines = _resolved_close_lines(summary)
+        if close_lines:
+            lines.extend(close_lines)
+        elif summary.still_open:
+            lines.append("    dome close         n/a (still open / no end-of-night close)")
 
     if summary and summary.intervals:
         anchor = night_anchor_ut(events, exposure_ut or [])
